@@ -1,0 +1,12 @@
+name = "chattia-assistant"
+main = "chattia-worker.ts"
+compatibility_date = "2024-08-29"
+compatibility_flags = ["nodejs_compat"]
+
+[ai]
+binding = "AI"
+
+[assets]
+binding = "ASSETS"
+directory = "./public"
+html_handling = "auto-trailing-slash"
