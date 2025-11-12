@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>OPS AI Chatbot</title>
+<title>Chattia</title>
 
 <!-- Patched FontAwesome (CSP + SRI + CORS Safe) -->
 <link rel="stylesheet"
@@ -42,13 +42,13 @@ body.dark{--clr-bg:var(--clr-bg-dark);--clr-tx:var(--clr-tx-dark)}
 #chatbot-form-container{background:#220f3a;border-top:1px solid var(--clr-accent);padding:.55rem .7rem}
 #chatbot-input-row{display:flex;gap:.6rem}
 #chatbot-input{flex:1;background:transparent;border:none;color:#fff;font-size:.95rem;padding:.55rem .6rem}
-#chatbot-send{display:flex;align-items:center;gap:6px;background:var(--clr-accent);border:none;color:#fff;
+#chatbot-send{display:flex;align-items:center;justify-content:center;gap:6px;background:var(--clr-accent);border:none;color:#fff;
   font-weight:600;padding:.5rem .9rem;border-radius:8px;cursor:pointer;transition:.3s}
 #chatbot-send i{transition:transform .3s}
 #chatbot-send:hover i{transform:rotate(-45deg)}
 #chatbot-send:disabled{background:#555;cursor:not-allowed}
-.human-check{color:#ddd;font-size:.85rem;display:flex;align-items:center;margin-top:.3rem}
-.human-check input{margin-right:.4rem}
+.turnstile-slot{margin-bottom:.35rem}
+.honeypot{position:absolute;left:-10000px;top:auto;width:1px;height:1px;overflow:hidden}
 @media(max-width:480px){#chatbot-container{height:75vh;width:90%}}
 </style>
 </head>
@@ -57,7 +57,7 @@ body.dark{--clr-bg:var(--clr-bg-dark);--clr-tx:var(--clr-tx-dark)}
 <!-- ---------- CHATBOT HTML ---------- -->
 <div id="chatbot-container" role="dialog" aria-modal="true">
   <div id="chatbot-header">
-    <span id="title" data-en="OPS AI Chatbot" data-es="Chatbot OPS AI">OPS AI Chatbot</span>
+    <span id="title" data-en="Chattia" data-es="Chattia">Chattia</span>
 
     <!-- tiny controls -->
     <div>
@@ -71,16 +71,16 @@ body.dark{--clr-bg:var(--clr-bg-dark);--clr-tx:var(--clr-tx-dark)}
 
   <div id="chatbot-form-container">
     <form id="chatbot-input-row" autocomplete="off">
-      <input id="chatbot-input" type="text" placeholder="Type your message..." required maxlength="256"
-             data-en-ph="Type your message..." data-es-ph="Escriba su mensaje...">
+      <div id="turnstile-slot" class="turnstile-slot" aria-hidden="true"></div>
+      <input id="turnstile-token" type="hidden" name="cf-turnstile-token" value="" data-require="false">
+      <label class="honeypot" for="chatbot-company">Company</label>
+      <input id="chatbot-company" class="honeypot" type="text" name="company" tabindex="-1" autocomplete="off" aria-hidden="true">
+      <input id="chatbot-input" type="text" placeholder="Type your message... [Enter for input]" required maxlength="256"
+             data-en-ph="Type your message... [Enter for input]" data-es-ph="Escriba su mensaje... [Intro para enviar]">
       <button id="chatbot-send" type="submit" disabled aria-label="Send">
-        <i class="fas fa-paper-plane"></i>
+        <i class="fas fa-arrow-right"></i>
       </button>
     </form>
-    <label class="human-check">
-      <input type="checkbox" id="human-check">
-      <span id="human-label" data-en="I am human" data-es="Soy humano">I am human</span>
-    </label>
   </div>
 </div>
 
@@ -97,8 +97,7 @@ const state={
 /* === Language toggle === */
 const langCtrl   = qs('#langCtrl'),
       transNodes = qsa('[data-en]'),
-      phNodes    = qsa('[data-en-ph]'),
-      humanLab   = qs('#human-label');
+      phNodes    = qsa('[data-en-ph]');
 
 langCtrl.onclick = () => {
   const toES = langCtrl.textContent === 'ES';      // going EN→ES ?
@@ -110,7 +109,6 @@ langCtrl.onclick = () => {
 
   // placeholders
   phNodes.forEach(node => node.placeholder  = toES ? node.dataset.esPh : node.dataset.enPh);
-  humanLab.textContent = toES ? humanLab.dataset.es : humanLab.dataset.en;
 };
 
 /* === Theme toggle === */
@@ -126,15 +124,20 @@ const log   = qs('#chat-log'),
       form  = qs('#chatbot-input-row'),
       input = qs('#chatbot-input'),
       send  = qs('#chatbot-send'),
-      guard = qs('#human-check');
+      honeypot = qs('#chatbot-company'),
+      turnstileToken = qs('#turnstile-token');
+
+const isTurnstileRequired = () => Boolean(turnstileToken && turnstileToken.dataset.require === 'true');
 
 function updateSendState(){
   const hasText = Boolean(input.value.trim());
-  send.disabled = !guard.checked || !hasText || state.isSending;
+  const botSuspect = honeypot && honeypot.value.trim().length>0;
+  const turnstileReady = !isTurnstileRequired() || (turnstileToken && turnstileToken.value.trim().length>0);
+  send.disabled = !hasText || state.isSending || botSuspect || !turnstileReady;
 }
 
-guard.addEventListener('change', updateSendState);
 input.addEventListener('input', updateSendState);
+honeypot && honeypot.addEventListener('input', updateSendState);
 
 function addMsg(txt,cls){
   const div = document.createElement('div');
@@ -147,7 +150,8 @@ function addMsg(txt,cls){
 
 form.onsubmit = async e=>{
   e.preventDefault();
-  if(!guard.checked) return;
+  if(honeypot && honeypot.value.trim().length>0) return;
+  if(isTurnstileRequired() && turnstileToken && !turnstileToken.value.trim()) return;
 
   const msg = input.value.trim();
   if(!msg) return;
@@ -188,6 +192,24 @@ form.onsubmit = async e=>{
 };
 
 updateSendState();
+
+window.chattiaTurnstile = {
+  setToken(token=''){
+    if(!turnstileToken) return;
+    turnstileToken.value = token;
+    updateSendState();
+  },
+  clear(){
+    if(!turnstileToken) return;
+    turnstileToken.value = '';
+    updateSendState();
+  },
+  require(flag=true){
+    if(!turnstileToken) return;
+    turnstileToken.dataset.require = flag ? 'true' : 'false';
+    updateSendState();
+  }
+};
 </script>
 </body>
 </html>
