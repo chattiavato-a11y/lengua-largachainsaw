@@ -89,6 +89,11 @@ body.dark{--clr-bg:var(--clr-bg-dark);--clr-tx:var(--clr-tx-dark)}
 const qs=s=>document.querySelector(s),
       qsa=s=>[...document.querySelectorAll(s)];
 
+const state={
+  conversation:[],
+  isSending:false
+};
+
 /* === Language toggle === */
 const langCtrl   = qs('#langCtrl'),
       transNodes = qsa('[data-en]'),
@@ -123,7 +128,13 @@ const log   = qs('#chat-log'),
       send  = qs('#chatbot-send'),
       guard = qs('#human-check');
 
-guard.onchange = () => send.disabled = !guard.checked;
+function updateSendState(){
+  const hasText = Boolean(input.value.trim());
+  send.disabled = !guard.checked || !hasText || state.isSending;
+}
+
+guard.addEventListener('change', updateSendState);
+input.addEventListener('input', updateSendState);
 
 function addMsg(txt,cls){
   const div = document.createElement('div');
@@ -131,6 +142,7 @@ function addMsg(txt,cls){
   div.textContent = txt;
   log.appendChild(div);
   log.scrollTop = log.scrollHeight;
+  return div;
 }
 
 form.onsubmit = async e=>{
@@ -139,22 +151,43 @@ form.onsubmit = async e=>{
 
   const msg = input.value.trim();
   if(!msg) return;
+
+  const locale = document.documentElement.lang || 'en';
+  state.conversation.push({role:'user',content:msg});
   addMsg(msg,'user');
-  input.value=''; send.disabled=true;
-  addMsg('…','bot');
+
+  input.value='';
+  state.isSending = true;
+  updateSendState();
+
+  const typingEl = addMsg('…','bot');
+  typingEl.setAttribute('aria-live','assertive');
 
   try{
-    const r = await fetch('https://your-cloudflare-worker.example.com/chat',{
-      method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({message:msg})
+    const r = await fetch('/api/chat',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        messages:state.conversation,
+        metadata:{ channel:'chattia-web', locale }
+      })
     });
+
+    if(!r.ok) throw new Error('Network response was not ok');
     const d = await r.json();
-    log.lastChild.textContent = d.reply || 'No reply.';
-  }catch{
-    log.lastChild.textContent = 'Error: Can’t reach AI.';
+    const reply = (d.reply || 'No reply.').trim();
+    typingEl.textContent = reply;
+    state.conversation.push({role:'assistant',content:reply});
+  }catch(err){
+    console.error(err);
+    typingEl.textContent = 'Error: Can’t reach Chattia.';
+  }finally{
+    state.isSending = false;
+    updateSendState();
   }
-  send.disabled=false;
 };
+
+updateSendState();
 </script>
 </body>
 </html>
