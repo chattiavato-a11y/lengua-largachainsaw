@@ -44,10 +44,11 @@ body.dark{--clr-bg:var(--clr-bg-dark);--clr-tx:var(--clr-tx-dark)}
 #chatbot-input-row{display:flex;gap:.6rem}
 #chatbot-input{flex:1;background:transparent;border:none;color:#fff;font-size:.95rem;padding:.55rem .6rem}
 #chatbot-send{display:flex;align-items:center;justify-content:center;gap:6px;background:var(--clr-accent);border:none;color:#fff;
-  font-weight:600;padding:.5rem .9rem;border-radius:8px;cursor:pointer;transition:.3s}
-#chatbot-send i{transition:transform .3s}
+  font-weight:600;padding:.5rem .9rem;border-radius:8px;cursor:pointer;transition:.3s;box-shadow:0 4px 12px rgba(0,0,0,.25)}
+#chatbot-send i{transition:transform .3s;font-size:1rem}
 #chatbot-send:hover i{transform:rotate(-45deg)}
-#chatbot-send:disabled{background:#555;cursor:not-allowed}
+#chatbot-send:disabled{background:rgba(255,59,219,.35);color:rgba(255,255,255,.75);cursor:not-allowed;box-shadow:none}
+#chatbot-send:focus-visible{outline:2px solid var(--clr-primary);outline-offset:2px}
 .turnstile-slot{margin-bottom:.35rem}
 .honeypot{position:absolute;left:-10000px;top:auto;width:1px;height:1px;overflow:hidden}
 @media(max-width:480px){#chatbot-container{height:75vh;width:90%}}
@@ -79,7 +80,7 @@ body.dark{--clr-bg:var(--clr-bg-dark);--clr-tx:var(--clr-tx-dark)}
       <input id="chatbot-input" type="text" placeholder="Type your message... [Enter for input]" required maxlength="256"
              data-en-ph="Type your message... [Enter for input]" data-es-ph="Escriba su mensaje... [Intro para enviar]">
       <button id="chatbot-send" type="submit" disabled aria-label="Send">
-        <i class="fas fa-arrow-right"></i>
+        <i class="fa fa-arrow-right" aria-hidden="true"></i>
       </button>
     </form>
   </div>
