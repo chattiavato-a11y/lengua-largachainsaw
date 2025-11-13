@@ -29,11 +29,16 @@ body{margin:0;display:flex;align-items:center;justify-content:center;height:100v
 body.dark{--clr-bg:var(--clr-bg-dark);--clr-tx:var(--clr-tx-dark)}
 
 /* ---------- CHATBOT ---------- */
-#chatbot-container{width:300px;height:540px;background:#251541;border:2px solid var(--clr-accent);
-  border-radius:18px;box-shadow:0 8px 32px #0006;display:flex;flex-direction:column;overflow:hidden}
+#chatbot-container{position:fixed;width:300px;height:540px;background:#251541;border:2px solid var(--clr-accent);
+  border-radius:18px;box-shadow:0 8px 32px #0006;display:flex;flex-direction:column;overflow:hidden;
+  left:50%;top:50%;transform:translate(-50%,-50%);transition:box-shadow .2s ease;will-change:transform,left,top}
+#chatbot-container.dragging{box-shadow:0 12px 36px rgba(0,0,0,.55)}
 #chatbot-header{display:flex;justify-content:space-between;align-items:center;gap:.5rem;
   background:linear-gradient(135deg,var(--clr-primary) 0%,var(--clr-accent) 100%);
-  color:#fff;font-weight:600;font-size:1.1rem;padding:.75rem 1rem}
+  color:#fff;font-weight:600;font-size:1.1rem;padding:.75rem 1rem;cursor:grab;user-select:none;
+  touch-action:none}
+#chatbot-container.dragging #chatbot-header{cursor:grabbing}
+#chatbot-header:focus-visible{outline:2px solid var(--clr-primary);outline-offset:4px}
 #chatbot-header .ctrl{cursor:pointer;font-size:.75rem;font-weight:500;user-select:none;opacity:.85}
 #chatbot-header .ctrl:hover{opacity:1}
 #chat-log{flex:1;overflow-y:auto;padding:1rem;background:#1b0e2d;color:#eee;font-size:.94rem}
@@ -58,7 +63,7 @@ body.dark{--clr-bg:var(--clr-bg-dark);--clr-tx:var(--clr-tx-dark)}
 
 <!-- ---------- CHATBOT HTML ---------- -->
 <div id="chatbot-container" role="dialog" aria-modal="true">
-  <div id="chatbot-header">
+  <div id="chatbot-header" tabindex="0" aria-grabbed="false" aria-label="Chattia chatbot window. Drag or use arrow keys to move.">
     <span id="title" data-en="Chattia" data-es="Chattia">Chattia</span>
 
     <!-- tiny controls -->
@@ -122,7 +127,9 @@ themeCtrl.onclick = () => {
 };
 
 /* === Chatbot core === */
-const log   = qs('#chat-log'),
+const container = qs('#chatbot-container'),
+      header = qs('#chatbot-header'),
+      log   = qs('#chat-log'),
       form  = qs('#chatbot-input-row'),
       input = qs('#chatbot-input'),
       send  = qs('#chatbot-send'),
@@ -194,6 +201,132 @@ form.onsubmit = async e=>{
 };
 
 updateSendState();
+
+/* === Draggable window === */
+const dragState = {
+  active:false,
+  offsetX:0,
+  offsetY:0,
+  position:null,
+  userInitiated:false
+};
+
+const VIEWPORT_MARGIN = 16;
+
+function clampPosition(x,y){
+  const width = container.offsetWidth;
+  const height = container.offsetHeight;
+  const maxX = Math.max(VIEWPORT_MARGIN, window.innerWidth - width - VIEWPORT_MARGIN);
+  const maxY = Math.max(VIEWPORT_MARGIN, window.innerHeight - height - VIEWPORT_MARGIN);
+  const clampedX = Math.min(Math.max(x, VIEWPORT_MARGIN), maxX);
+  const clampedY = Math.min(Math.max(y, VIEWPORT_MARGIN), maxY);
+  return {x:clampedX, y:clampedY};
+}
+
+function applyPosition(x,y){
+  const {x:clampedX, y:clampedY} = clampPosition(x,y);
+  container.style.transform = 'none';
+  container.style.left = `${clampedX}px`;
+  container.style.top = `${clampedY}px`;
+  dragState.position = {x:clampedX, y:clampedY};
+}
+
+function centerContainer(){
+  const width = container.offsetWidth;
+  const height = container.offsetHeight;
+  const centeredX = (window.innerWidth - width) / 2;
+  const centeredY = (window.innerHeight - height) / 2;
+  applyPosition(centeredX, centeredY);
+  dragState.userInitiated = false;
+}
+
+function startDrag(event){
+  if(event.button !== undefined && event.button !== 0) return;
+  if(event.target.closest('.ctrl')) return;
+  dragState.active = true;
+  const rect = container.getBoundingClientRect();
+  dragState.offsetX = event.clientX - rect.left;
+  dragState.offsetY = event.clientY - rect.top;
+  dragState.userInitiated = true;
+  container.classList.add('dragging');
+  header.setPointerCapture?.(event.pointerId);
+  header.setAttribute('aria-grabbed','true');
+  event.preventDefault();
+}
+
+function onDrag(event){
+  if(!dragState.active) return;
+  const x = event.clientX - dragState.offsetX;
+  const y = event.clientY - dragState.offsetY;
+  applyPosition(x, y);
+}
+
+function endDrag(event){
+  if(!dragState.active) return;
+  dragState.active = false;
+  container.classList.remove('dragging');
+  header.releasePointerCapture?.(event.pointerId);
+  header.setAttribute('aria-grabbed','false');
+}
+
+function maintainBounds(){
+  if(!dragState.position){
+    centerContainer();
+    return;
+  }
+  applyPosition(dragState.position.x, dragState.position.y);
+}
+
+header.addEventListener('pointerdown', startDrag);
+window.addEventListener('pointermove', onDrag);
+window.addEventListener('pointerup', endDrag);
+window.addEventListener('pointercancel', endDrag);
+window.addEventListener('resize', () => {
+  if(dragState.userInitiated){
+    maintainBounds();
+  }else{
+    centerContainer();
+  }
+});
+
+header.addEventListener('keydown', event => {
+  const step = event.shiftKey ? 32 : 16;
+  let newX = dragState.position?.x ?? container.offsetLeft;
+  let newY = dragState.position?.y ?? container.offsetTop;
+  let moved = false;
+  switch(event.key){
+    case 'ArrowUp':
+      newY -= step;
+      moved = true;
+      break;
+    case 'ArrowDown':
+      newY += step;
+      moved = true;
+      break;
+    case 'ArrowLeft':
+      newX -= step;
+      moved = true;
+      break;
+    case 'ArrowRight':
+      newX += step;
+      moved = true;
+      break;
+    case 'Home':
+      event.preventDefault();
+      centerContainer();
+      dragState.userInitiated = false;
+      return;
+    default:
+      break;
+  }
+  if(moved){
+    event.preventDefault();
+    applyPosition(newX, newY);
+    dragState.userInitiated = true;
+  }
+});
+
+centerContainer();
 
 window.chattiaTurnstile = {
   setToken(token=''){
