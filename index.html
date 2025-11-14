@@ -91,6 +91,31 @@ body.dark{--clr-bg:var(--clr-bg-dark);--clr-tx:var(--clr-tx-dark)}
   </div>
 </div>
 
+<!-- ---------- SPEECH-TO-TEXT CONTROLS ---------- -->
+<div id="stt-controls" style="padding:.6rem;background:#1b0e2d;color:#ddd;border-top:1px solid #4a2a7a;margin-top:.5rem">
+  <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
+    <input id="stt-file" type="file" accept="audio/*">
+    <label>Lang
+      <select id="stt-lang">
+        <option value="en" selected>en</option>
+        <option value="es">es</option>
+      </select>
+    </label>
+    <label>Prefer
+      <select id="stt-prefer">
+        <option value="">auto</option>
+        <option value="tiny">tiny</option>
+        <option value="base">base</option>
+        <option value="turbo">turbo</option>
+        <option value="vendor">vendor</option>
+      </select>
+    </label>
+    <button id="stt-send"  type="button">Transcribe file</button>
+    <button id="mic-btn"   type="button">🎙 Start</button>
+  </div>
+  <pre id="stt-out" style="margin:.5rem 0 0;white-space:pre-wrap"></pre>
+</div>
+
 <!-- ---------- CHATBOT LOGIC ---------- -->
 <script>
 const qs=s=>document.querySelector(s),
@@ -177,6 +202,7 @@ form.onsubmit = async e=>{
   typingEl.setAttribute('aria-live','assertive');
 
   try{
+    // **HERE GOES CHAT API URL (RELATIVE OR ABSOLUTE ENDPOINT)**
     const r = await fetch('/api/chat',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
@@ -345,6 +371,89 @@ window.chattiaTurnstile = {
     updateSendState();
   }
 };
+
+// ---- Configure API endpoint ----
+const STT_URL = '/api/stt';
+// **HERE GOES PRIMARY STT API URL (RELATIVE PATH OR SAME-ORIGIN ENDPOINT)**
+// const STT_URL = 'https://ops-chattia-api.grabem-holdem-nuts-right.workers.dev/api/stt';
+// **HERE GOES FULLY-QUALIFIED STT URL WHEN USING DIFFERENT ORIGIN**
+
+const $ = s => document.querySelector(s);
+const chatInput = document.querySelector('#chatbot-input'); // will auto-fill transcript here
+
+function showResult(resp, data) {
+  const tier = resp.headers.get('x-tier') || '?';
+  const model = resp.headers.get('x-model') || '?';
+  $('#stt-out').textContent = resp.ok
+    ? `tier=${tier}  model=${model}\n\n${data.text || ''}`
+    : JSON.stringify(data, null, 2);
+  if (resp.ok && data.text && chatInput) chatInput.value = data.text; // drop text into chat box
+}
+
+// ---------- A) File picker -> /api/stt ----------
+$('#stt-send')?.addEventListener('click', async () => {
+  const f = $('#stt-file')?.files?.[0];
+  if (!f) { $('#stt-out').textContent = 'Pick an audio file.'; return; }
+
+  const form = new FormData();
+  form.append('audio', f);                                  // REQUIRED name
+  form.append('lang', $('#stt-lang').value || 'en');        // optional
+  form.append('prefer', $('#stt-prefer').value || '');      // optional
+
+  try {
+    const r = await fetch(STT_URL, { method: 'POST', body: form });
+    const d = await r.json();
+    showResult(r, d);
+  } catch {
+    $('#stt-out').textContent = 'Network error';
+  }
+});
+
+// ---------- B) Microphone (record) -> /api/stt ----------
+const mo = { mimeType: 'audio/webm' }; // compact and widely supported
+let media, rec, chunks = [], recording = false;
+
+$('#mic-btn')?.addEventListener('click', async () => {
+  if (!recording) {
+    try {
+      chunks = [];
+      media = await navigator.mediaDevices.getUserMedia({ audio: true });
+      rec = new MediaRecorder(media, mo);
+      rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+      rec.start();
+      recording = true;
+      $('#mic-btn').textContent = '⏹ Stop';
+    } catch {
+      $('#stt-out').textContent = 'Mic permission denied.'; 
+    }
+    return;
+  }
+
+  // Stop & upload
+  rec.stop();
+  media.getTracks().forEach(t => t.stop());
+  recording = false;
+  $('#mic-btn').textContent = '🎙 Start';
+
+  const blob = new Blob(chunks, { type: mo.mimeType || 'audio/webm' });
+  if (blob.size > 8_000_000) { // matches Worker default MAX_AUDIO_BYTES (8 MB)
+    $('#stt-out').textContent = 'Audio too large; record a shorter clip.'; 
+    return;
+  }
+
+  const form = new FormData();
+  form.append('audio', blob, 'clip.webm');
+  form.append('lang', $('#stt-lang').value || 'en');
+  form.append('prefer', $('#stt-prefer').value || '');
+
+  try {
+    const r = await fetch(STT_URL, { method: 'POST', body: form });
+    const d = await r.json();
+    showResult(r, d);
+  } catch {
+    $('#stt-out').textContent = 'Network error';
+  }
+});
 </script>
 </body>
 </html>
