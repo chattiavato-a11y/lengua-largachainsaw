@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Chattia</title>
+<meta name="integrity-token" content="">
+<!-- **HERE GOES THE RUNTIME INTEGRITY TOKEN (INJECT VIA BUILD/DEPLOY PIPELINE)** -->
 
 <!-- Patched FontAwesome (CSP + SRI + CORS Safe) -->
 <link rel="stylesheet"
@@ -113,6 +115,11 @@ const state={
   conversation:[],
   isSending:false
 };
+
+const integrityMeta = document.querySelector('meta[name="integrity-token"]');
+const INTEGRITY_HEADER = 'X-Integrity';
+const INTEGRITY_TOKEN = integrityMeta?.content?.trim() || '';
+// **HERE GOES INTEGRITY HEADER VALUE (MUST MATCH WORKER POLICY)**
 
 /* === Language toggle === */
 const langCtrl   = qs('#langCtrl'),
@@ -262,7 +269,10 @@ async function sendToChatbot(locale, origin){
     // **HERE GOES CHAT API URL (PROTECT THIS ENDPOINT UNDER INTEGRITY POLICIES)**
     const r = await fetch(CHAT_URL,{
       method:'POST',
-      headers:{'Content-Type':'application/json'},
+      headers:{
+        'Content-Type':'application/json',
+        [INTEGRITY_HEADER]:INTEGRITY_TOKEN
+      },
       body:JSON.stringify({
         messages:state.conversation,
         metadata:{ channel:'chattia-web', locale, input_origin:origin }
@@ -482,30 +492,36 @@ async function handleRecordingStop(){
   audioChunks = [];
 
   if(blob.size === 0){
-    sttStatus.textContent = 'No audio captured.';
+    if(sttStatus) sttStatus.textContent = 'No audio captured.';
     return;
   }
   if(blob.size > 8_000_000){
-    sttStatus.textContent = 'Audio too large; please record a shorter clip.';
+    if(sttStatus) sttStatus.textContent = 'Audio too large; please record a shorter clip.';
     return;
   }
 
   const form = new FormData();
   form.append('audio', blob, 'clip.webm');
+  form.append('lang', document.documentElement.lang || 'en');
+  form.append('prefer','');
 
   try{
-    sttStatus.textContent = 'Transcribing securely…';
-    const resp = await fetch(STT_URL,{ method:'POST', body:form });
+    if(sttStatus) sttStatus.textContent = 'Transcribing securely…';
+    const resp = await fetch(STT_URL,{
+      method:'POST',
+      headers:{ [INTEGRITY_HEADER]:INTEGRITY_TOKEN },
+      body:form
+    });
     const data = await resp.json();
     if(resp.ok && data.text){
-      sttStatus.textContent = 'Transcript received and sanitized.';
+      if(sttStatus) sttStatus.textContent = 'Transcript received and sanitized.';
       processUserMessage(data.text,'voice');
     }else{
-      sttStatus.textContent = 'Unable to transcribe audio.';
+      if(sttStatus) sttStatus.textContent = 'Unable to transcribe audio.';
     }
   }catch(err){
     console.error(err);
-    sttStatus.textContent = 'Network error while reaching STT service.';
+    if(sttStatus) sttStatus.textContent = 'Network error while reaching STT service.';
   }
 }
 
@@ -522,11 +538,11 @@ micBtn?.addEventListener('click', async () => {
       mediaRecorder.start();
       recording = true;
       micBtn.textContent = '⏹ Stop';
-      sttStatus.textContent = 'Recording… release to process.';
+      if(sttStatus) sttStatus.textContent = 'Recording… release to process.';
       resetInactivityTimer();
     }catch(err){
       console.error(err);
-      sttStatus.textContent = 'Microphone permission denied.';
+      if(sttStatus) sttStatus.textContent = 'Microphone permission denied.';
       stopMediaTracks();
     }
     return;
@@ -534,7 +550,7 @@ micBtn?.addEventListener('click', async () => {
 
   recording = false;
   micBtn.textContent = '🎙 Record';
-  sttStatus.textContent = 'Processing audio…';
+  if(sttStatus) sttStatus.textContent = 'Processing audio…';
   mediaRecorder?.stop();
 });
 
@@ -548,6 +564,8 @@ function forceStopRecording(){
 }
 
 window.addEventListener('beforeunload', forceStopRecording);
+
+resetInactivityTimer();
 </script>
 </body>
 </html>
