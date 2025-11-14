@@ -1,4 +1,3 @@
-# SHA384(wrangler.toml)=9dda18ce54d47d28dffc674af0ba6a2b676d45186d22dce5ce9184ddacfd43da09795575ef94b5c59f8fe7702012c8da
 # Integrity Gateway: https://withered-mouse-9aee.grabem-holdem-nuts-right.workers.dev
 # OPS CySec Core Compliance: CORS | CSP | CISA | NIST | PCI DSS | SHA-384 | SHA-512
 name = "ops-chattia-api"
