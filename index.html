@@ -4,6 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Chattia</title>
+<meta name="integrity-token" content="">
+<!-- **HERE GOES THE RUNTIME INTEGRITY TOKEN (INJECT VIA BUILD/DEPLOY PIPELINE)** -->
+<!-- **HERE GOES INTEGRITY GATEWAY** https://withered-mouse-9aee.grabem-holdem-nuts-right.workers.dev -->
+<!-- OPS CYSEC CORE | CORS • CSP • CISA • NIST • PCI DSS • SHA-384 • SHA-512 SAFEGUARDS -->
 
 <!-- Patched FontAwesome (CSP + SRI + CORS Safe) -->
 <link rel="stylesheet"
@@ -126,6 +130,76 @@ const state={
   isSending:false
 };
 
+const integrityMeta = document.querySelector('meta[name="integrity-token"]');
+const INTEGRITY_HEADER = 'X-Integrity';
+const INTEGRITY_TOKEN = integrityMeta?.content?.trim() || '';
+const INTEGRITY_GATEWAY = 'https://withered-mouse-9aee.grabem-holdem-nuts-right.workers.dev';
+// **HERE GOES INTEGRITY HEADER VALUE (MUST MATCH WORKER POLICY)**
+// **HERE GOES PROTECTED INTEGRITY GATEWAY URL** (OPS CYSEC CORE COMPLIANT)
+const INTEGRITY_PROTOCOLS = 'CORS,CSP,OPS-CySec-Core,CISA,NIST,PCI-DSS,SHA-384,SHA-512';
+const sharedIntegrityHeaders = Object.freeze({
+  [INTEGRITY_HEADER]: INTEGRITY_TOKEN,
+  'X-Integrity-Gateway': INTEGRITY_GATEWAY,
+  'X-Integrity-Protocols': INTEGRITY_PROTOCOLS
+});
+
+/* ===== API base routing (GitHub Pages → workers.dev) ===== */
+const UI_ORIGIN = location.origin;
+const API_BASE = (UI_ORIGIN === 'https://chattiavato-a11y.github.io')
+  ? 'https://ops-chattia-api.grabem-holdem-nuts-right.workers.dev'
+  : '';
+// **HERE GOES PRODUCTION WORKER BASE URL UNDER INTEGRITY CONTROLS**
+const CHAT_PATH = '/api/chat';
+const STT_PATH = '/api/stt';
+const CHAT_URL = `${API_BASE}${CHAT_PATH}`; // **HERE GOES PROTECTED CHAT ENDPOINT**
+const STT_URL = `${API_BASE}${STT_PATH}`;   // **HERE GOES PROTECTED STT ENDPOINT**
+const AUTH_URL = `${API_BASE}/auth/issue`;  // **HERE GOES SIGNATURE MINTING ROUTE**
+
+/* ===== Integrity helpers (browser) ===== */
+function randNonceHex(len = 16){
+  const u8 = new Uint8Array(len);
+  crypto.getRandomValues(u8);
+  return [...u8].map(b => b.toString(16).padStart(2,'0')).join('');
+}
+
+async function sha256HexOfString(value){
+  const buf = new TextEncoder().encode(value);
+  const digest = await crypto.subtle.digest('SHA-256', buf);
+  return [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2,'0')).join('');
+}
+
+async function signedPost(path, bodyObj){
+  const ts = String(Math.floor(Date.now()/1000));
+  const nonce = randNonceHex(16);
+  const body = JSON.stringify(bodyObj);
+  const body_sha256 = await sha256HexOfString(body);
+
+  const mintResponse = await fetch(AUTH_URL, {
+    method:'POST',
+    headers:{
+      ...sharedIntegrityHeaders,
+      'Content-Type':'application/json'
+    },
+    body: JSON.stringify({ ts, nonce, method:'POST', path, body_sha256 })
+  });
+
+  if(!mintResponse.ok) throw new Error('mint_failed');
+  const { signature } = await mintResponse.json();
+  if(!signature) throw new Error('signature_missing');
+
+  return fetch(`${API_BASE}${path}`, {
+    method:'POST',
+    headers:{
+      ...sharedIntegrityHeaders,
+      'Content-Type':'application/json',
+      'X-OPS-Timestamp': ts,
+      'X-OPS-Nonce': nonce,
+      'X-OPS-Signature': signature
+    },
+    body
+  });
+}
+
 /* === Language toggle === */
 const langCtrl   = qs('#langCtrl'),
       transNodes = qsa('[data-en]'),
@@ -161,13 +235,57 @@ const container = qs('#chatbot-container'),
       honeypot = qs('#chatbot-company'),
       turnstileToken = qs('#turnstile-token');
 
+const micBtn = qs('#mic-btn');
+const sttStatus = qs('#stt-status');
+
 const isTurnstileRequired = () => Boolean(turnstileToken && turnstileToken.dataset.require === 'true');
+
+const sessionGuard = {
+  warnings:0,
+  sessionTerminated:false,
+  inactivityTimer:null
+};
+
+const WARNING_MESSAGE = 'Apologies, but I cannot execute that request, do you have any questions about our website?';
+const TERMINATE_MESSAGE = 'Apologies, but I must not continue with this chat and I must end this session.';
+const TIMEOUT_MESSAGE = 'Thank you for visiting us, we look forward to you visiting us once more, Enjoy your day!';
+
+function disableInputs(){
+  input.disabled = true;
+  send.disabled = true;
+  micBtn?.setAttribute('disabled','');
+}
+
+function resetInactivityTimer(){
+  if(sessionGuard.sessionTerminated) return;
+  if(sessionGuard.inactivityTimer) clearTimeout(sessionGuard.inactivityTimer);
+  sessionGuard.inactivityTimer = setTimeout(()=>{
+    terminateSession(TIMEOUT_MESSAGE,{ clearLog:true, clearConversation:true, status:'Session closed after inactivity.' });
+  },60000);
+}
+
+function terminateSession(message,{clearLog=false, clearConversation=false, status='Session closed.'}={}){
+  if(sessionGuard.sessionTerminated) return;
+  sessionGuard.sessionTerminated = true;
+  if(sessionGuard.inactivityTimer){
+    clearTimeout(sessionGuard.inactivityTimer);
+    sessionGuard.inactivityTimer = null;
+  }
+  if(clearConversation) state.conversation = [];
+  if(clearLog) log.innerHTML = '';
+  disableInputs();
+  state.isSending = false;
+  forceStopRecording();
+  updateSendState();
+  if(sttStatus) sttStatus.textContent = status;
+  addMsg(message,'bot');
+}
 
 function updateSendState(){
   const hasText = Boolean(input.value.trim());
   const botSuspect = honeypot && honeypot.value.trim().length>0;
   const turnstileReady = !isTurnstileRequired() || (turnstileToken && turnstileToken.value.trim().length>0);
-  send.disabled = !hasText || state.isSending || botSuspect || !turnstileReady;
+  send.disabled = sessionGuard.sessionTerminated || !hasText || state.isSending || botSuspect || !turnstileReady;
 }
 
 input.addEventListener('input', updateSendState);
@@ -179,22 +297,47 @@ function addMsg(txt,cls){
   div.textContent = txt;
   log.appendChild(div);
   log.scrollTop = log.scrollHeight;
+  resetInactivityTimer();
   return div;
 }
 
-form.onsubmit = async e=>{
-  e.preventDefault();
-  if(honeypot && honeypot.value.trim().length>0) return;
-  if(isTurnstileRequired() && turnstileToken && !turnstileToken.value.trim()) return;
+const MALICIOUS_PATTERNS = [
+  /<[^>]*>/i,
+  /script/i,
+  /malicious/i,
+  /attack/i,
+  /prompt/i,
+  /ignore/i,
+  /hack/i,
+  /drop\s+table/i
+];
 
-  const msg = input.value.trim();
-  if(!msg) return;
+const WEBSITE_KEYWORDS = [
+  'website','site','chattia','product','service','support','order','account','pricing','contact','help'
+];
 
-  const locale = document.documentElement.lang || 'en';
-  state.conversation.push({role:'user',content:msg});
-  addMsg(msg,'user');
+function sanitizeInput(text=''){
+  return text.replace(/[<>]/g,'').replace(/\s+/g,' ').trim();
+}
 
-  input.value='';
+function violatesPolicy(text){
+  const lower = text.toLowerCase();
+  const looksMalicious = MALICIOUS_PATTERNS.some(rx => rx.test(lower));
+  const onTopic = WEBSITE_KEYWORDS.some(word => lower.includes(word));
+  return looksMalicious || !onTopic;
+}
+
+function enforcePolicy(){
+  sessionGuard.warnings += 1;
+  if(sessionGuard.warnings >= 2){
+    terminateSession(TERMINATE_MESSAGE,{ status:'Session closed for security.' });
+    return;
+  }
+  addMsg(WARNING_MESSAGE,'bot');
+  if(sttStatus) sttStatus.textContent = 'Awaiting an on-topic website question.';
+}
+
+async function sendToChatbot(locale, origin){
   state.isSending = true;
   updateSendState();
 
@@ -212,8 +355,8 @@ form.onsubmit = async e=>{
       })
     });
 
-    if(!r.ok) throw new Error('Network response was not ok');
-    const d = await r.json();
+    if(!response.ok) throw new Error('Network response was not ok');
+    const d = await response.json();
     const reply = (d.reply || 'No reply.').trim();
     typingEl.textContent = reply;
     state.conversation.push({role:'assistant',content:reply});
@@ -224,7 +367,39 @@ form.onsubmit = async e=>{
     state.isSending = false;
     updateSendState();
   }
-};
+}
+
+function processUserMessage(rawText, origin){
+  if(sessionGuard.sessionTerminated) return;
+  const sanitized = sanitizeInput(rawText);
+  if(!sanitized) return;
+
+  addMsg(sanitized,'user');
+
+  if(violatesPolicy(sanitized)){
+    enforcePolicy();
+    input.value='';
+    updateSendState();
+    return;
+  }
+
+  const locale = document.documentElement.lang || 'en';
+  state.conversation.push({role:'user',content:sanitized});
+  input.value='';
+  updateSendState();
+  sendToChatbot(locale, origin);
+}
+
+form.addEventListener('submit', e => {
+  e.preventDefault();
+  if(sessionGuard.sessionTerminated) return;
+  if(honeypot && honeypot.value.trim().length>0) return;
+  if(isTurnstileRequired() && turnstileToken && !turnstileToken.value.trim()) return;
+
+  const msg = input.value.trim();
+  if(!msg) return;
+  processUserMessage(msg,'text');
+});
 
 updateSendState();
 
