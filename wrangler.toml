@@ -1,7 +1,7 @@
 # Integrity Gateway: https://withered-mouse-9aee.grabem-holdem-nuts-right.workers.dev
 # OPS CySec Core Compliance: CORS | CSP | CISA | NIST | PCI DSS | SHA-384 | SHA-512
 name = "ops-chattia-api"
-main = "src/worker.js"              # or the actual path/file you use
+main = "src/worker.js"
 compatibility_date = "2025-11-01"
 workers_dev = true
 
