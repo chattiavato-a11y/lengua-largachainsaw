@@ -5,6 +5,36 @@ actionable, and aligned with human-computer interaction (HCI) best practices. Pr
 step-by-step support when helpful, highlight important cautions, and remain compliant
 with accessibility and privacy expectations.`;
 
+const WARNING_MESSAGE =
+  "Apologies, but I cannot execute that request, do you have any questions about our website?";
+const TERMINATE_MESSAGE =
+  "Apologies, but I must not continue with this chat and I must end this session.";
+
+const MALICIOUS_PATTERNS: RegExp[] = [
+  /<[^>]*>/i,
+  /script/i,
+  /malicious/i,
+  /attack/i,
+  /ignore/i,
+  /prompt/i,
+  /hack/i,
+  /drop\s+table/i
+];
+
+const WEBSITE_KEYWORDS = [
+  "website",
+  "site",
+  "chattia",
+  "product",
+  "service",
+  "support",
+  "order",
+  "account",
+  "pricing",
+  "contact",
+  "help"
+];
+
 interface Env {
   AI: {
     run<T = unknown>(
@@ -58,12 +88,23 @@ async function handleChatRequest(request: Request, env: Env): Promise<Response> 
         )
       : [];
 
+    const policyCheck = evaluatePolicy(normalizedMessages);
+    if (policyCheck.blocked) {
+      return buildGuardedResponse(policyCheck.reply);
+    }
+
+    const sanitizedMessages = normalizedMessages.map((msg) =>
+      msg.role === "user"
+        ? { ...msg, content: sanitizeText(msg.content) }
+        : msg
+    );
+
     if (!normalizedMessages.some((msg) => msg.role === "system")) {
-      normalizedMessages.unshift({ role: "system", content: SYSTEM_PROMPT });
+      sanitizedMessages.unshift({ role: "system", content: SYSTEM_PROMPT });
     }
 
     const aiResponse: any = await env.AI.run(MODEL_ID, {
-      messages: normalizedMessages,
+      messages: sanitizedMessages,
       max_tokens: 768,
       temperature: 0.3,
       metadata,
@@ -99,4 +140,61 @@ async function handleChatRequest(request: Request, env: Env): Promise<Response> 
       }
     );
   }
+}
+
+function sanitizeText(input: string): string {
+  return input.replace(/[<>]/g, "").replace(/\s+/g, " ").trim();
+}
+
+function evaluatePolicy(messages: Message[]): { blocked: boolean; reply?: string } {
+  if (!messages.length) {
+    return { blocked: false };
+  }
+
+  const userMessages = messages.filter((msg) => msg.role === "user");
+  if (!userMessages.length) {
+    return { blocked: false };
+  }
+
+  const lastUser = sanitizeText(userMessages[userMessages.length - 1].content);
+  if (!lastUser) {
+    return { blocked: false };
+  }
+
+  const lower = lastUser.toLowerCase();
+  const looksMalicious = MALICIOUS_PATTERNS.some((pattern) => pattern.test(lower));
+  const onTopic = WEBSITE_KEYWORDS.some((keyword) => lower.includes(keyword));
+
+  if (!looksMalicious && onTopic) {
+    return { blocked: false };
+  }
+
+  const guardCount = messages.filter(
+    (msg) =>
+      msg.role === "assistant" &&
+      (msg.content.includes(WARNING_MESSAGE) ||
+        msg.content.includes(TERMINATE_MESSAGE))
+  ).length;
+
+  if (guardCount >= 1) {
+    return { blocked: true, reply: TERMINATE_MESSAGE };
+  }
+
+  return { blocked: true, reply: WARNING_MESSAGE };
+}
+
+function buildGuardedResponse(reply = WARNING_MESSAGE): Response {
+  const body = JSON.stringify({
+    reply,
+    model: MODEL_ID,
+    usage: null,
+  });
+
+  return new Response(body, {
+    status: 200,
+    headers: {
+      "content-type": "application/json; charset=UTF-8",
+      "cache-control": "no-store",
+    },
+  });
 }

@@ -91,6 +91,19 @@ body.dark{--clr-bg:var(--clr-bg-dark);--clr-tx:var(--clr-tx-dark)}
   </div>
 </div>
 
+<!-- ---------- SPEECH-TO-TEXT CONTROLS ---------- -->
+<div id="stt-controls" style="padding:.6rem;background:#1b0e2d;color:#ddd;border-top:1px solid #4a2a7a;margin-top:.5rem">
+  <div style="font-size:.8rem;margin-bottom:.35rem;line-height:1.4">
+    <strong>Voice Bridge</strong> → Tap the microphone to capture audio, auto-sanitize it, and deliver it straight to the chatbot.
+  </div>
+  <div style="display:flex;gap:.75rem;align-items:center;flex-wrap:wrap">
+    <button id="mic-btn" type="button" style="padding:.45rem .8rem;border-radius:.6rem;border:1px solid #5b3c8d;background:#2d1849;color:#fff;cursor:pointer">
+      🎙 Record
+    </button>
+    <span id="stt-status" aria-live="polite" style="font-size:.78rem;color:#cfc7ff">Idle — ready to listen.</span>
+  </div>
+</div>
+
 <!-- ---------- CHATBOT LOGIC ---------- -->
 <script>
 const qs=s=>document.querySelector(s),
@@ -136,13 +149,57 @@ const container = qs('#chatbot-container'),
       honeypot = qs('#chatbot-company'),
       turnstileToken = qs('#turnstile-token');
 
+const micBtn = qs('#mic-btn');
+const sttStatus = qs('#stt-status');
+
 const isTurnstileRequired = () => Boolean(turnstileToken && turnstileToken.dataset.require === 'true');
+
+const sessionGuard = {
+  warnings:0,
+  sessionTerminated:false,
+  inactivityTimer:null
+};
+
+const WARNING_MESSAGE = 'Apologies, but I cannot execute that request, do you have any questions about our website?';
+const TERMINATE_MESSAGE = 'Apologies, but I must not continue with this chat and I must end this session.';
+const TIMEOUT_MESSAGE = 'Thank you for visiting us, we look forward to you visiting us once more, Enjoy your day!';
+
+function disableInputs(){
+  input.disabled = true;
+  send.disabled = true;
+  micBtn?.setAttribute('disabled','');
+}
+
+function resetInactivityTimer(){
+  if(sessionGuard.sessionTerminated) return;
+  if(sessionGuard.inactivityTimer) clearTimeout(sessionGuard.inactivityTimer);
+  sessionGuard.inactivityTimer = setTimeout(()=>{
+    terminateSession(TIMEOUT_MESSAGE,{ clearLog:true, clearConversation:true, status:'Session closed after inactivity.' });
+  },60000);
+}
+
+function terminateSession(message,{clearLog=false, clearConversation=false, status='Session closed.'}={}){
+  if(sessionGuard.sessionTerminated) return;
+  sessionGuard.sessionTerminated = true;
+  if(sessionGuard.inactivityTimer){
+    clearTimeout(sessionGuard.inactivityTimer);
+    sessionGuard.inactivityTimer = null;
+  }
+  if(clearConversation) state.conversation = [];
+  if(clearLog) log.innerHTML = '';
+  disableInputs();
+  state.isSending = false;
+  forceStopRecording();
+  updateSendState();
+  if(sttStatus) sttStatus.textContent = status;
+  addMsg(message,'bot');
+}
 
 function updateSendState(){
   const hasText = Boolean(input.value.trim());
   const botSuspect = honeypot && honeypot.value.trim().length>0;
   const turnstileReady = !isTurnstileRequired() || (turnstileToken && turnstileToken.value.trim().length>0);
-  send.disabled = !hasText || state.isSending || botSuspect || !turnstileReady;
+  send.disabled = sessionGuard.sessionTerminated || !hasText || state.isSending || botSuspect || !turnstileReady;
 }
 
 input.addEventListener('input', updateSendState);
@@ -154,22 +211,47 @@ function addMsg(txt,cls){
   div.textContent = txt;
   log.appendChild(div);
   log.scrollTop = log.scrollHeight;
+  resetInactivityTimer();
   return div;
 }
 
-form.onsubmit = async e=>{
-  e.preventDefault();
-  if(honeypot && honeypot.value.trim().length>0) return;
-  if(isTurnstileRequired() && turnstileToken && !turnstileToken.value.trim()) return;
+const MALICIOUS_PATTERNS = [
+  /<[^>]*>/i,
+  /script/i,
+  /malicious/i,
+  /attack/i,
+  /prompt/i,
+  /ignore/i,
+  /hack/i,
+  /drop\s+table/i
+];
 
-  const msg = input.value.trim();
-  if(!msg) return;
+const WEBSITE_KEYWORDS = [
+  'website','site','chattia','product','service','support','order','account','pricing','contact','help'
+];
 
-  const locale = document.documentElement.lang || 'en';
-  state.conversation.push({role:'user',content:msg});
-  addMsg(msg,'user');
+function sanitizeInput(text=''){
+  return text.replace(/[<>]/g,'').replace(/\s+/g,' ').trim();
+}
 
-  input.value='';
+function violatesPolicy(text){
+  const lower = text.toLowerCase();
+  const looksMalicious = MALICIOUS_PATTERNS.some(rx => rx.test(lower));
+  const onTopic = WEBSITE_KEYWORDS.some(word => lower.includes(word));
+  return looksMalicious || !onTopic;
+}
+
+function enforcePolicy(){
+  sessionGuard.warnings += 1;
+  if(sessionGuard.warnings >= 2){
+    terminateSession(TERMINATE_MESSAGE,{ status:'Session closed for security.' });
+    return;
+  }
+  addMsg(WARNING_MESSAGE,'bot');
+  if(sttStatus) sttStatus.textContent = 'Awaiting an on-topic website question.';
+}
+
+async function sendToChatbot(locale, origin){
   state.isSending = true;
   updateSendState();
 
@@ -177,12 +259,13 @@ form.onsubmit = async e=>{
   typingEl.setAttribute('aria-live','assertive');
 
   try{
-    const r = await fetch('/api/chat',{
+    // **HERE GOES CHAT API URL (PROTECT THIS ENDPOINT UNDER INTEGRITY POLICIES)**
+    const r = await fetch(CHAT_URL,{
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({
         messages:state.conversation,
-        metadata:{ channel:'chattia-web', locale }
+        metadata:{ channel:'chattia-web', locale, input_origin:origin }
       })
     });
 
@@ -198,7 +281,39 @@ form.onsubmit = async e=>{
     state.isSending = false;
     updateSendState();
   }
-};
+}
+
+function processUserMessage(rawText, origin){
+  if(sessionGuard.sessionTerminated) return;
+  const sanitized = sanitizeInput(rawText);
+  if(!sanitized) return;
+
+  addMsg(sanitized,'user');
+
+  if(violatesPolicy(sanitized)){
+    enforcePolicy();
+    input.value='';
+    updateSendState();
+    return;
+  }
+
+  const locale = document.documentElement.lang || 'en';
+  state.conversation.push({role:'user',content:sanitized});
+  input.value='';
+  updateSendState();
+  sendToChatbot(locale, origin);
+}
+
+form.addEventListener('submit', e => {
+  e.preventDefault();
+  if(sessionGuard.sessionTerminated) return;
+  if(honeypot && honeypot.value.trim().length>0) return;
+  if(isTurnstileRequired() && turnstileToken && !turnstileToken.value.trim()) return;
+
+  const msg = input.value.trim();
+  if(!msg) return;
+  processUserMessage(msg,'text');
+});
 
 updateSendState();
 
@@ -345,6 +460,94 @@ window.chattiaTurnstile = {
     updateSendState();
   }
 };
+
+// ---- Configure API endpoint ----
+const CHAT_URL = '/api/chat';
+// **HERE GOES PRIMARY CHAT API URL (ENSURE REQUEST INTEGRITY OR ROUTE THROUGH WRANGLER TOML)**
+
+const STT_URL = '/api/stt';
+// **HERE GOES SECURED STT API URL (SANITIZE BEFORE SENDING TO WORKER)**
+
+const mo = { mimeType: 'audio/webm' }; // compact and widely supported
+let mediaStream, mediaRecorder, audioChunks = [], recording = false;
+
+function stopMediaTracks(){
+  mediaStream?.getTracks().forEach(t=>t.stop());
+  mediaStream = undefined;
+}
+
+async function handleRecordingStop(){
+  stopMediaTracks();
+  const blob = new Blob(audioChunks, { type: mo.mimeType || 'audio/webm' });
+  audioChunks = [];
+
+  if(blob.size === 0){
+    sttStatus.textContent = 'No audio captured.';
+    return;
+  }
+  if(blob.size > 8_000_000){
+    sttStatus.textContent = 'Audio too large; please record a shorter clip.';
+    return;
+  }
+
+  const form = new FormData();
+  form.append('audio', blob, 'clip.webm');
+
+  try{
+    sttStatus.textContent = 'Transcribing securely…';
+    const resp = await fetch(STT_URL,{ method:'POST', body:form });
+    const data = await resp.json();
+    if(resp.ok && data.text){
+      sttStatus.textContent = 'Transcript received and sanitized.';
+      processUserMessage(data.text,'voice');
+    }else{
+      sttStatus.textContent = 'Unable to transcribe audio.';
+    }
+  }catch(err){
+    console.error(err);
+    sttStatus.textContent = 'Network error while reaching STT service.';
+  }
+}
+
+micBtn?.addEventListener('click', async () => {
+  if(sessionGuard.sessionTerminated) return;
+
+  if(!recording){
+    try{
+      audioChunks = [];
+      mediaStream = await navigator.mediaDevices.getUserMedia({ audio:true });
+      mediaRecorder = new MediaRecorder(mediaStream, mo);
+      mediaRecorder.ondataavailable = e => { if(e.data && e.data.size) audioChunks.push(e.data); };
+      mediaRecorder.onstop = handleRecordingStop;
+      mediaRecorder.start();
+      recording = true;
+      micBtn.textContent = '⏹ Stop';
+      sttStatus.textContent = 'Recording… release to process.';
+      resetInactivityTimer();
+    }catch(err){
+      console.error(err);
+      sttStatus.textContent = 'Microphone permission denied.';
+      stopMediaTracks();
+    }
+    return;
+  }
+
+  recording = false;
+  micBtn.textContent = '🎙 Record';
+  sttStatus.textContent = 'Processing audio…';
+  mediaRecorder?.stop();
+});
+
+function forceStopRecording(){
+  if(recording){
+    recording = false;
+    mediaRecorder?.stop();
+  }
+  micBtn?.setAttribute('disabled','');
+  stopMediaTracks();
+}
+
+window.addEventListener('beforeunload', forceStopRecording);
 </script>
 </body>
 </html>
