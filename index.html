@@ -97,15 +97,27 @@ body.dark{--clr-bg:var(--clr-bg-dark);--clr-tx:var(--clr-tx-dark)}
 
 <!-- ---------- SPEECH-TO-TEXT CONTROLS ---------- -->
 <div id="stt-controls" style="padding:.6rem;background:#1b0e2d;color:#ddd;border-top:1px solid #4a2a7a;margin-top:.5rem">
-  <div style="font-size:.8rem;margin-bottom:.35rem;line-height:1.4">
-    <strong>Voice Bridge</strong> → Tap the microphone to capture audio, auto-sanitize it, and deliver it straight to the chatbot.
+  <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
+    <input id="stt-file" type="file" accept="audio/*">
+    <label>Lang
+      <select id="stt-lang">
+        <option value="en" selected>en</option>
+        <option value="es">es</option>
+      </select>
+    </label>
+    <label>Prefer
+      <select id="stt-prefer">
+        <option value="">auto</option>
+        <option value="tiny">tiny</option>
+        <option value="base">base</option>
+        <option value="turbo">turbo</option>
+        <option value="vendor">vendor</option>
+      </select>
+    </label>
+    <button id="stt-send"  type="button">Transcribe file</button>
+    <button id="mic-btn"   type="button">🎙 Start</button>
   </div>
-  <div style="display:flex;gap:.75rem;align-items:center;flex-wrap:wrap">
-    <button id="mic-btn" type="button" style="padding:.45rem .8rem;border-radius:.6rem;border:1px solid #5b3c8d;background:#2d1849;color:#fff;cursor:pointer">
-      🎙 Record
-    </button>
-    <span id="stt-status" aria-live="polite" style="font-size:.78rem;color:#cfc7ff">Idle — ready to listen.</span>
-  </div>
+  <pre id="stt-out" style="margin:.5rem 0 0;white-space:pre-wrap"></pre>
 </div>
 
 <!-- ---------- CHATBOT LOGIC ---------- -->
@@ -333,9 +345,14 @@ async function sendToChatbot(locale, origin){
   typingEl.setAttribute('aria-live','assertive');
 
   try{
-    const response = await signedPost(CHAT_PATH, {
-      messages: state.conversation,
-      metadata: { channel:'chattia-web', locale, input_origin:origin }
+    // **HERE GOES CHAT API URL (RELATIVE OR ABSOLUTE ENDPOINT)**
+    const r = await fetch('/api/chat',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        messages:state.conversation,
+        metadata:{ channel:'chattia-web', locale }
+      })
     });
 
     if(!response.ok) throw new Error('Network response was not ok');
@@ -530,94 +547,88 @@ window.chattiaTurnstile = {
   }
 };
 
-const mo = { mimeType: 'audio/webm' }; // compact and widely supported
-let mediaStream, mediaRecorder, audioChunks = [], recording = false;
+// ---- Configure API endpoint ----
+const STT_URL = '/api/stt';
+// **HERE GOES PRIMARY STT API URL (RELATIVE PATH OR SAME-ORIGIN ENDPOINT)**
+// const STT_URL = 'https://ops-chattia-api.grabem-holdem-nuts-right.workers.dev/api/stt';
+// **HERE GOES FULLY-QUALIFIED STT URL WHEN USING DIFFERENT ORIGIN**
 
-function stopMediaTracks(){
-  mediaStream?.getTracks().forEach(t=>t.stop());
-  mediaStream = undefined;
+const $ = s => document.querySelector(s);
+const chatInput = document.querySelector('#chatbot-input'); // will auto-fill transcript here
+
+function showResult(resp, data) {
+  const tier = resp.headers.get('x-tier') || '?';
+  const model = resp.headers.get('x-model') || '?';
+  $('#stt-out').textContent = resp.ok
+    ? `tier=${tier}  model=${model}\n\n${data.text || ''}`
+    : JSON.stringify(data, null, 2);
+  if (resp.ok && data.text && chatInput) chatInput.value = data.text; // drop text into chat box
 }
 
-async function handleRecordingStop(){
-  stopMediaTracks();
-  const blob = new Blob(audioChunks, { type: mo.mimeType || 'audio/webm' });
-  audioChunks = [];
+// ---------- A) File picker -> /api/stt ----------
+$('#stt-send')?.addEventListener('click', async () => {
+  const f = $('#stt-file')?.files?.[0];
+  if (!f) { $('#stt-out').textContent = 'Pick an audio file.'; return; }
 
-  if(blob.size === 0){
-    if(sttStatus) sttStatus.textContent = 'No audio captured.';
+  const form = new FormData();
+  form.append('audio', f);                                  // REQUIRED name
+  form.append('lang', $('#stt-lang').value || 'en');        // optional
+  form.append('prefer', $('#stt-prefer').value || '');      // optional
+
+  try {
+    const r = await fetch(STT_URL, { method: 'POST', body: form });
+    const d = await r.json();
+    showResult(r, d);
+  } catch {
+    $('#stt-out').textContent = 'Network error';
+  }
+});
+
+// ---------- B) Microphone (record) -> /api/stt ----------
+const mo = { mimeType: 'audio/webm' }; // compact and widely supported
+let media, rec, chunks = [], recording = false;
+
+$('#mic-btn')?.addEventListener('click', async () => {
+  if (!recording) {
+    try {
+      chunks = [];
+      media = await navigator.mediaDevices.getUserMedia({ audio: true });
+      rec = new MediaRecorder(media, mo);
+      rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+      rec.start();
+      recording = true;
+      $('#mic-btn').textContent = '⏹ Stop';
+    } catch {
+      $('#stt-out').textContent = 'Mic permission denied.'; 
+    }
     return;
   }
-  if(blob.size > 8_000_000){
-    if(sttStatus) sttStatus.textContent = 'Audio too large; please record a shorter clip.';
+
+  // Stop & upload
+  rec.stop();
+  media.getTracks().forEach(t => t.stop());
+  recording = false;
+  $('#mic-btn').textContent = '🎙 Start';
+
+  const blob = new Blob(chunks, { type: mo.mimeType || 'audio/webm' });
+  if (blob.size > 8_000_000) { // matches Worker default MAX_AUDIO_BYTES (8 MB)
+    $('#stt-out').textContent = 'Audio too large; record a shorter clip.'; 
     return;
   }
 
   const form = new FormData();
   form.append('audio', blob, 'clip.webm');
-  form.append('lang', document.documentElement.lang || 'en');
-  form.append('prefer','');
+  form.append('lang', $('#stt-lang').value || 'en');
+  form.append('prefer', $('#stt-prefer').value || '');
 
-  try{
-    if(sttStatus) sttStatus.textContent = 'Transcribing securely…';
-    const resp = await fetch(STT_URL,{
-      method:'POST',
-      headers: sharedIntegrityHeaders,
-      body:form
-    });
-    const data = await resp.json();
-    if(resp.ok && data.text){
-      if(sttStatus) sttStatus.textContent = 'Transcript received and sanitized.';
-      processUserMessage(data.text,'voice');
-    }else{
-      if(sttStatus) sttStatus.textContent = 'Unable to transcribe audio.';
-    }
-  }catch(err){
-    console.error(err);
-    if(sttStatus) sttStatus.textContent = 'Network error while reaching STT service.';
+  try {
+    const r = await fetch(STT_URL, { method: 'POST', body: form });
+    const d = await r.json();
+    showResult(r, d);
+  } catch {
+    $('#stt-out').textContent = 'Network error';
   }
-}
-
-micBtn?.addEventListener('click', async () => {
-  if(sessionGuard.sessionTerminated) return;
-
-  if(!recording){
-    try{
-      audioChunks = [];
-      mediaStream = await navigator.mediaDevices.getUserMedia({ audio:true });
-      mediaRecorder = new MediaRecorder(mediaStream, mo);
-      mediaRecorder.ondataavailable = e => { if(e.data && e.data.size) audioChunks.push(e.data); };
-      mediaRecorder.onstop = handleRecordingStop;
-      mediaRecorder.start();
-      recording = true;
-      micBtn.textContent = '⏹ Stop';
-      if(sttStatus) sttStatus.textContent = 'Recording… release to process.';
-      resetInactivityTimer();
-    }catch(err){
-      console.error(err);
-      if(sttStatus) sttStatus.textContent = 'Microphone permission denied.';
-      stopMediaTracks();
-    }
-    return;
-  }
-
-  recording = false;
-  micBtn.textContent = '🎙 Record';
-  if(sttStatus) sttStatus.textContent = 'Processing audio…';
-  mediaRecorder?.stop();
 });
-
-function forceStopRecording(){
-  if(recording){
-    recording = false;
-    mediaRecorder?.stop();
-  }
-  micBtn?.setAttribute('disabled','');
-  stopMediaTracks();
-}
-
-window.addEventListener('beforeunload', forceStopRecording);
-
-resetInactivityTimer();
 </script>
 </body>
 </html>
