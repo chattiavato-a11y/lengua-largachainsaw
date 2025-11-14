@@ -67,12 +67,20 @@ interface Env {
   ALLOW_DASH?: string;
   INTEGRITY_GATEWAY?: string;
   INTEGRITY_PROTOCOLS?: string;
+  OPS_NONCE_KV?: KVNamespace;
+  SIG_TTL_SECONDS?: string;
+  SHARED_KEY?: string;
 }
 
 type Message = {
   role: "system" | "user" | "assistant" | "tool";
   content: string;
 };
+
+interface KVNamespace {
+  get(key: string): Promise<string | null>;
+  put(key: string, value: string, options?: { expirationTtl?: number }): Promise<void>;
+}
 
 export default {
   /**
@@ -89,6 +97,18 @@ export default {
     if (url.pathname === "/" || !url.pathname.startsWith("/api/")) {
       const assetResponse = await env.ASSETS.fetch(request);
       return applySecurityHeaders(assetResponse, request, env);
+    }
+
+    if (url.pathname === "/auth/issue") {
+      if (request.method === "POST") {
+        const authResponse = await handleAuthIssue(request, env);
+        return applySecurityHeaders(authResponse, request, env);
+      }
+      return applySecurityHeaders(
+        new Response("Method not allowed", { status: 405 }),
+        request,
+        env
+      );
     }
 
     if (url.pathname === "/api/chat") {
@@ -122,6 +142,128 @@ export default {
     );
   },
 };
+
+async function handleAuthIssue(request: Request, env: Env): Promise<Response> {
+  const integrityFailure = enforceIntegrity(request, env);
+  if (integrityFailure) {
+    return integrityFailure;
+  }
+
+  if (!env.SHARED_KEY) {
+    return new Response(
+      JSON.stringify({ error: "Signature service unavailable" }),
+      {
+        status: 500,
+        headers: { "content-type": "application/json; charset=UTF-8" },
+      }
+    );
+  }
+
+  let payload: any;
+  try {
+    payload = await request.json();
+  } catch (error) {
+    console.warn("Invalid JSON for auth issue request", error);
+    return new Response(JSON.stringify({ error: "Invalid JSON" }), {
+      status: 400,
+      headers: { "content-type": "application/json; charset=UTF-8" },
+    });
+  }
+
+  const tsRaw = payload?.ts ?? payload?.timestamp;
+  const nonceRaw = payload?.nonce;
+  const methodRaw = payload?.method;
+  const pathRaw = payload?.path;
+  const bodyShaRaw = payload?.body_sha256 ?? payload?.bodySha256;
+
+  const timestamp = Number(tsRaw);
+  const now = Math.floor(Date.now() / 1000);
+  const ttl = getSignatureTtl(env);
+
+  if (!Number.isFinite(timestamp)) {
+    return new Response(JSON.stringify({ error: "Invalid timestamp" }), {
+      status: 400,
+      headers: { "content-type": "application/json; charset=UTF-8" },
+    });
+  }
+
+  if (timestamp > now + 5 || now - timestamp > ttl) {
+    return new Response(JSON.stringify({ error: "Timestamp out of range" }), {
+      status: 400,
+      headers: { "content-type": "application/json; charset=UTF-8" },
+    });
+  }
+
+  const nonce = typeof nonceRaw === "string" ? nonceRaw.trim().toLowerCase() : "";
+  if (!/^[a-f0-9]{32}$/.test(nonce)) {
+    return new Response(JSON.stringify({ error: "Invalid nonce" }), {
+      status: 400,
+      headers: { "content-type": "application/json; charset=UTF-8" },
+    });
+  }
+
+  const method = typeof methodRaw === "string" ? methodRaw.trim().toUpperCase() : "";
+  if (!method || method !== "POST") {
+    return new Response(JSON.stringify({ error: "Unsupported method" }), {
+      status: 400,
+      headers: { "content-type": "application/json; charset=UTF-8" },
+    });
+  }
+
+  const path = typeof pathRaw === "string" ? pathRaw.trim() : "";
+  if (!path.startsWith("/api/")) {
+    return new Response(JSON.stringify({ error: "Invalid path" }), {
+      status: 400,
+      headers: { "content-type": "application/json; charset=UTF-8" },
+    });
+  }
+
+  const bodySha =
+    typeof bodyShaRaw === "string" ? bodyShaRaw.trim().toLowerCase() : "";
+  if (!/^[a-f0-9]{64}$/.test(bodySha)) {
+    return new Response(JSON.stringify({ error: "Invalid body digest" }), {
+      status: 400,
+      headers: { "content-type": "application/json; charset=UTF-8" },
+    });
+  }
+
+  const kv = env.OPS_NONCE_KV;
+  if (kv) {
+    const nonceKey = `${nonce}:${timestamp}`;
+    try {
+      const existing = await kv.get(nonceKey);
+      if (existing) {
+        return new Response(JSON.stringify({ error: "Nonce reuse detected" }), {
+          status: 409,
+          headers: { "content-type": "application/json; charset=UTF-8" },
+        });
+      }
+      await kv.put(nonceKey, "1", { expirationTtl: ttl });
+    } catch (error) {
+      console.error("KV error enforcing nonce integrity", error);
+      return new Response(
+        JSON.stringify({ error: "Nonce integrity unavailable" }),
+        {
+          status: 500,
+          headers: { "content-type": "application/json; charset=UTF-8" },
+        }
+      );
+    }
+  }
+
+  const canonical = `${timestamp}.${nonce}.${method}.${path}.${bodySha}`;
+  const signature = await createHmacSha512Base64(env.SHARED_KEY, canonical);
+  const remaining = Math.max(0, ttl - Math.max(0, now - timestamp));
+
+  return new Response(JSON.stringify({ signature, expires_in: remaining }), {
+    status: 200,
+    headers: {
+      "content-type": "application/json; charset=UTF-8",
+      "cache-control": "no-store",
+      "x-signature-ttl": String(ttl),
+    },
+  });
+}
 
 async function handleChatRequest(request: Request, env: Env): Promise<Response> {
   const integrityFailure = enforceIntegrity(request, env);
@@ -206,7 +348,11 @@ async function handleChatRequest(request: Request, env: Env): Promise<Response> 
 }
 
 function sanitizeText(input: string): string {
-  return input.replace(/[<>]/g, "").replace(/\s+/g, " ").trim();
+  if (!input) return "";
+  return String(input)
+    .replace(/[^\x09\x0A\x0D\x20-\x7E\u00A0-\uFFFF]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function sanitizeLocale(input: string | null | undefined): string {
@@ -324,6 +470,15 @@ function enforceIntegrity(request: Request, env: Env): Response | null {
   }
 
   return null;
+}
+
+function getSignatureTtl(env: Env): number {
+  const fallback = 300;
+  const configured = env.SIG_TTL_SECONDS ? Number(env.SIG_TTL_SECONDS) : NaN;
+  if (!Number.isFinite(configured) || configured <= 0) {
+    return fallback;
+  }
+  return Math.max(60, Math.min(900, Math.floor(configured)));
 }
 
 function getMaxTokens(env: Env): number {
@@ -496,6 +651,27 @@ function extractTranscript(aiResponse: any): string {
   }
 
   return "";
+}
+
+async function createHmacSha512Base64(
+  secret: string,
+  message: string
+): Promise<string> {
+  const encoder = new TextEncoder();
+  const keyData = encoder.encode(secret);
+  const cryptoKey = await crypto.subtle.importKey(
+    "raw",
+    keyData,
+    { name: "HMAC", hash: "SHA-512" },
+    false,
+    ["sign"]
+  );
+  const signatureBuffer = await crypto.subtle.sign(
+    "HMAC",
+    cryptoKey,
+    encoder.encode(message)
+  );
+  return bufferToBase64(signatureBuffer);
 }
 
 async function digestSha512Base64(input: string): Promise<string> {

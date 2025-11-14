@@ -132,6 +132,63 @@ const sharedIntegrityHeaders = Object.freeze({
   'X-Integrity-Protocols': INTEGRITY_PROTOCOLS
 });
 
+/* ===== API base routing (GitHub Pages → workers.dev) ===== */
+const UI_ORIGIN = location.origin;
+const API_BASE = (UI_ORIGIN === 'https://chattiavato-a11y.github.io')
+  ? 'https://ops-chattia-api.grabem-holdem-nuts-right.workers.dev'
+  : '';
+// **HERE GOES PRODUCTION WORKER BASE URL UNDER INTEGRITY CONTROLS**
+const CHAT_PATH = '/api/chat';
+const STT_PATH = '/api/stt';
+const CHAT_URL = `${API_BASE}${CHAT_PATH}`; // **HERE GOES PROTECTED CHAT ENDPOINT**
+const STT_URL = `${API_BASE}${STT_PATH}`;   // **HERE GOES PROTECTED STT ENDPOINT**
+const AUTH_URL = `${API_BASE}/auth/issue`;  // **HERE GOES SIGNATURE MINTING ROUTE**
+
+/* ===== Integrity helpers (browser) ===== */
+function randNonceHex(len = 16){
+  const u8 = new Uint8Array(len);
+  crypto.getRandomValues(u8);
+  return [...u8].map(b => b.toString(16).padStart(2,'0')).join('');
+}
+
+async function sha256HexOfString(value){
+  const buf = new TextEncoder().encode(value);
+  const digest = await crypto.subtle.digest('SHA-256', buf);
+  return [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2,'0')).join('');
+}
+
+async function signedPost(path, bodyObj){
+  const ts = String(Math.floor(Date.now()/1000));
+  const nonce = randNonceHex(16);
+  const body = JSON.stringify(bodyObj);
+  const body_sha256 = await sha256HexOfString(body);
+
+  const mintResponse = await fetch(AUTH_URL, {
+    method:'POST',
+    headers:{
+      ...sharedIntegrityHeaders,
+      'Content-Type':'application/json'
+    },
+    body: JSON.stringify({ ts, nonce, method:'POST', path, body_sha256 })
+  });
+
+  if(!mintResponse.ok) throw new Error('mint_failed');
+  const { signature } = await mintResponse.json();
+  if(!signature) throw new Error('signature_missing');
+
+  return fetch(`${API_BASE}${path}`, {
+    method:'POST',
+    headers:{
+      ...sharedIntegrityHeaders,
+      'Content-Type':'application/json',
+      'X-OPS-Timestamp': ts,
+      'X-OPS-Nonce': nonce,
+      'X-OPS-Signature': signature
+    },
+    body
+  });
+}
+
 /* === Language toggle === */
 const langCtrl   = qs('#langCtrl'),
       transNodes = qsa('[data-en]'),
@@ -277,21 +334,13 @@ async function sendToChatbot(locale, origin){
   typingEl.setAttribute('aria-live','assertive');
 
   try{
-    // **HERE GOES CHAT API URL (PROTECT THIS ENDPOINT UNDER INTEGRITY POLICIES)**
-    const r = await fetch(CHAT_URL,{
-      method:'POST',
-      headers:{
-        ...sharedIntegrityHeaders,
-        'Content-Type':'application/json'
-      },
-      body:JSON.stringify({
-        messages:state.conversation,
-        metadata:{ channel:'chattia-web', locale, input_origin:origin }
-      })
+    const response = await signedPost(CHAT_PATH, {
+      messages: state.conversation,
+      metadata: { channel:'chattia-web', locale, input_origin:origin }
     });
 
-    if(!r.ok) throw new Error('Network response was not ok');
-    const d = await r.json();
+    if(!response.ok) throw new Error('Network response was not ok');
+    const d = await response.json();
     const reply = (d.reply || 'No reply.').trim();
     typingEl.textContent = reply;
     state.conversation.push({role:'assistant',content:reply});
@@ -481,13 +530,6 @@ window.chattiaTurnstile = {
     updateSendState();
   }
 };
-
-// ---- Configure API endpoint ----
-const CHAT_URL = '/api/chat';
-// **HERE GOES PRIMARY CHAT API URL (ENSURE REQUEST INTEGRITY OR ROUTE THROUGH WRANGLER TOML)**
-
-const STT_URL = '/api/stt';
-// **HERE GOES SECURED STT API URL (SANITIZE BEFORE SENDING TO WORKER)**
 
 const mo = { mimeType: 'audio/webm' }; // compact and widely supported
 let mediaStream, mediaRecorder, audioChunks = [], recording = false;
