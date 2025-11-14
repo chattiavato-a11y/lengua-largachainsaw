@@ -1,4 +1,9 @@
 const MODEL_ID = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
+const DEFAULT_INTEGRITY_GATEWAY =
+  "https://withered-mouse-9aee.grabem-holdem-nuts-right.workers.dev";
+const BASE_ALLOWED_ORIGINS = ["https://chattiavato-a11y.github.io"];
+const DEFAULT_INTEGRITY_PROTOCOLS =
+  "CORS,CSP,OPS-CySec-Core,CISA,NIST,PCI-DSS,SHA-384,SHA-512";
 const SYSTEM_PROMPT = `You are Chattia, an empathetic, security-aware assistant that
 communicates with clarity and inclusive language. Deliver responses that are concise,
 actionable, and aligned with human-computer interaction (HCI) best practices. Provide
@@ -58,6 +63,10 @@ interface Env {
   AI_STT_VENDOR?: string;
   UI_ORIGIN_PRIMARY_SECRET?: string;
   UI_ORIGIN_SECONDARY_SECRET?: string;
+  ALLOW_WORKERS_DEV?: string;
+  ALLOW_DASH?: string;
+  INTEGRITY_GATEWAY?: string;
+  INTEGRITY_PROTOCOLS?: string;
 }
 
 type Message = {
@@ -72,25 +81,45 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
 
+    if (url.pathname.startsWith("/api/") && request.method === "OPTIONS") {
+      const preflight = new Response(null, { status: 204 });
+      return applySecurityHeaders(preflight, request, env);
+    }
+
     if (url.pathname === "/" || !url.pathname.startsWith("/api/")) {
-      return env.ASSETS.fetch(request);
+      const assetResponse = await env.ASSETS.fetch(request);
+      return applySecurityHeaders(assetResponse, request, env);
     }
 
     if (url.pathname === "/api/chat") {
       if (request.method === "POST") {
-        return handleChatRequest(request, env);
+        const chatResponse = await handleChatRequest(request, env);
+        return applySecurityHeaders(chatResponse, request, env);
       }
-      return new Response("Method not allowed", { status: 405 });
+      return applySecurityHeaders(
+        new Response("Method not allowed", { status: 405 }),
+        request,
+        env
+      );
     }
 
     if (url.pathname === "/api/stt") {
       if (request.method === "POST") {
-        return handleSttRequest(request, env);
+        const sttResponse = await handleSttRequest(request, env);
+        return applySecurityHeaders(sttResponse, request, env);
       }
-      return new Response("Method not allowed", { status: 405 });
+      return applySecurityHeaders(
+        new Response("Method not allowed", { status: 405 }),
+        request,
+        env
+      );
     }
 
-    return new Response("Not found", { status: 404 });
+    return applySecurityHeaders(
+      new Response("Not found", { status: 404 }),
+      request,
+      env
+    );
   },
 };
 
@@ -114,7 +143,7 @@ async function handleChatRequest(request: Request, env: Env): Promise<Response> 
 
     const policyCheck = evaluatePolicy(normalizedMessages);
     if (policyCheck.blocked) {
-      return buildGuardedResponse(policyCheck.reply);
+      return buildGuardedResponse(policyCheck.reply, env);
     }
 
     const sanitizedMessages = normalizedMessages.map((msg) =>
@@ -143,8 +172,12 @@ async function handleChatRequest(request: Request, env: Env): Promise<Response> 
       aiResponse?.output_text ||
       "I’m unable to respond right now.";
 
+    const trimmedReply = reply.trim();
+    const replyDigest = await digestSha512Base64(trimmedReply);
+    const integrityGateway = resolveIntegrityGateway(env);
+    const integrityProtocols = resolveIntegrityProtocols(env);
     const body = JSON.stringify({
-      reply: reply.trim(),
+      reply: trimmedReply,
       model: chatModel,
       usage: aiResponse?.usage ?? null,
     });
@@ -155,6 +188,9 @@ async function handleChatRequest(request: Request, env: Env): Promise<Response> 
         "content-type": "application/json; charset=UTF-8",
         "cache-control": "no-store",
         "x-model": chatModel,
+        "x-reply-digest-sha512": replyDigest,
+        "x-integrity-gateway": integrityGateway,
+        "x-integrity-protocols": integrityProtocols,
       },
     });
   } catch (error) {
@@ -216,9 +252,16 @@ function evaluatePolicy(messages: Message[]): { blocked: boolean; reply?: string
   return { blocked: true, reply: WARNING_MESSAGE };
 }
 
-function buildGuardedResponse(reply = WARNING_MESSAGE): Response {
+async function buildGuardedResponse(
+  reply = WARNING_MESSAGE,
+  env: Env
+): Promise<Response> {
+  const sanitizedReply = reply.trim() || WARNING_MESSAGE;
+  const replyDigest = await digestSha512Base64(sanitizedReply);
+  const integrityGateway = resolveIntegrityGateway(env);
+  const integrityProtocols = resolveIntegrityProtocols(env);
   const body = JSON.stringify({
-    reply,
+    reply: sanitizedReply,
     model: MODEL_ID,
     usage: null,
   });
@@ -229,6 +272,9 @@ function buildGuardedResponse(reply = WARNING_MESSAGE): Response {
       "content-type": "application/json; charset=UTF-8",
       "cache-control": "no-store",
       "x-model": MODEL_ID,
+      "x-reply-digest-sha512": replyDigest,
+      "x-integrity-gateway": integrityGateway,
+      "x-integrity-protocols": integrityProtocols,
     },
   });
 }
@@ -240,6 +286,8 @@ function enforceIntegrity(request: Request, env: Env): Response | null {
 
   const headerName = "x-integrity";
   const provided = request.headers.get(headerName);
+  const gateway = request.headers.get("x-integrity-gateway");
+  const expectedGateway = resolveIntegrityGateway(env);
   const allowed = [
     env.UI_ORIGIN_PRIMARY_SECRET,
     env.UI_ORIGIN_SECONDARY_SECRET,
@@ -250,6 +298,16 @@ function enforceIntegrity(request: Request, env: Env): Response | null {
       JSON.stringify({ error: "Integrity enforcement misconfigured" }),
       {
         status: 500,
+        headers: { "content-type": "application/json; charset=UTF-8" },
+      }
+    );
+  }
+
+  if (gateway !== expectedGateway) {
+    return new Response(
+      JSON.stringify({ error: "Integrity gateway mismatch" }),
+      {
+        status: 412,
         headers: { "content-type": "application/json; charset=UTF-8" },
       }
     );
@@ -353,6 +411,9 @@ async function handleSttRequest(request: Request, env: Env): Promise<Response> {
 
     const transcript = extractTranscript(aiResponse);
     const sanitized = sanitizeText(transcript);
+    const transcriptDigest = await digestSha512Base64(sanitized);
+    const integrityGateway = resolveIntegrityGateway(env);
+    const integrityProtocols = resolveIntegrityProtocols(env);
 
     return new Response(JSON.stringify({ text: sanitized }), {
       status: 200,
@@ -361,6 +422,9 @@ async function handleSttRequest(request: Request, env: Env): Promise<Response> {
         "cache-control": "no-store",
         "x-tier": aiResponse?.tier || "?",
         "x-model": model,
+        "x-transcript-digest-sha512": transcriptDigest,
+        "x-integrity-gateway": integrityGateway,
+        "x-integrity-protocols": integrityProtocols,
       },
     });
   } catch (error) {
@@ -375,13 +439,17 @@ async function handleSttRequest(request: Request, env: Env): Promise<Response> {
   }
 }
 
-function arrayBufferToBase64(buffer: ArrayBuffer): string {
+function bufferToBase64(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);
   let binary = "";
   for (let i = 0; i < bytes.byteLength; i += 1) {
     binary += String.fromCharCode(bytes[i]);
   }
   return btoa(binary);
+}
+
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  return bufferToBase64(buffer);
 }
 
 function selectSttModel(env: Env, prefer: string): string {
@@ -428,4 +496,154 @@ function extractTranscript(aiResponse: any): string {
   }
 
   return "";
+}
+
+async function digestSha512Base64(input: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(input);
+  const hashBuffer = await crypto.subtle.digest("SHA-512", data);
+  return bufferToBase64(hashBuffer);
+}
+
+function getAllowedOrigin(origin: string | null, env: Env): string | null {
+  if (!origin) {
+    return null;
+  }
+
+  const trimmed = origin.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const normalized = trimmed.toLowerCase();
+  const allowWorkersDev = env.ALLOW_WORKERS_DEV === "true";
+  const allowDash = env.ALLOW_DASH === "true";
+
+  const allowedOrigins = buildAllowedOrigins(env);
+  const match = allowedOrigins.find(
+    (allowedOrigin) => allowedOrigin.toLowerCase() === normalized
+  );
+  if (match) {
+    return match;
+  }
+
+  if (allowWorkersDev && isWorkersDevOrigin(normalized)) {
+    return origin;
+  }
+
+  if (allowDash && isDashOrigin(normalized)) {
+    return origin;
+  }
+
+  return null;
+}
+
+function buildAllowedOrigins(env: Env): string[] {
+  const integrityGateway = resolveIntegrityGateway(env);
+  const configured = env.INTEGRITY_GATEWAY?.trim();
+  const origins = new Set<string>(BASE_ALLOWED_ORIGINS);
+  origins.add(DEFAULT_INTEGRITY_GATEWAY);
+  origins.add(integrityGateway);
+  if (configured) {
+    origins.add(configured);
+  }
+  return Array.from(origins);
+}
+
+function isWorkersDevOrigin(origin: string): boolean {
+  try {
+    const url = new URL(origin);
+    return url.hostname.endsWith(".workers.dev");
+  } catch (error) {
+    console.warn("Unable to parse origin", origin, error);
+    return false;
+  }
+}
+
+function isDashOrigin(origin: string): boolean {
+  try {
+    const url = new URL(origin);
+    return url.hostname.endsWith(".dash.cloudflare.com");
+  } catch (error) {
+    console.warn("Unable to parse dash origin", origin, error);
+    return false;
+  }
+}
+
+function mergeVary(existing: string | null, value: string): string {
+  if (!existing) {
+    return value;
+  }
+
+  const parts = new Set(
+    existing
+      .split(",")
+      .map((part) => part.trim())
+      .filter(Boolean)
+  );
+  parts.add(value);
+  return Array.from(parts).join(", ");
+}
+
+function applySecurityHeaders(
+  response: Response,
+  request: Request,
+  env: Env
+): Response {
+  const headers = new Headers(response.headers);
+
+  const origin = request.headers.get("Origin");
+  const allowedOrigin = getAllowedOrigin(origin, env);
+  if (allowedOrigin) {
+    headers.set("Access-Control-Allow-Origin", allowedOrigin);
+    headers.set(
+      "Vary",
+      mergeVary(headers.get("Vary"), "Origin")
+    );
+    headers.set("Access-Control-Allow-Credentials", "true");
+  }
+
+  headers.set("Access-Control-Allow-Methods", "POST, OPTIONS");
+  headers.set(
+    "Access-Control-Allow-Headers",
+    "Content-Type, X-Integrity, X-Integrity-Gateway, X-Integrity-Protocols"
+  );
+  headers.set("Access-Control-Max-Age", "600");
+  headers.set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'; base-uri 'none';");
+  headers.set("X-Content-Type-Options", "nosniff");
+  headers.set("X-Frame-Options", "DENY");
+  headers.set("Referrer-Policy", "same-origin");
+  headers.set("Permissions-Policy", "microphone=(),camera=(),geolocation=()");
+  headers.set("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload");
+  const integrityGateway = resolveIntegrityGateway(env);
+  const integrityProtocols = resolveIntegrityProtocols(env);
+  headers.set("Cross-Origin-Resource-Policy", "same-origin");
+  headers.set("Cross-Origin-Opener-Policy", "same-origin");
+  headers.set("X-OPS-CYSEC-CORE", "active");
+  headers.set("X-Compliance-Frameworks", integrityProtocols);
+  headers.set("Integrity", integrityGateway);
+  headers.set("X-Integrity-Gateway", integrityGateway);
+  headers.set("X-Integrity-Protocols", integrityProtocols);
+
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
+function resolveIntegrityGateway(env: Env): string {
+  const configured = env.INTEGRITY_GATEWAY?.trim();
+  if (configured) {
+    return configured;
+  }
+  return DEFAULT_INTEGRITY_GATEWAY;
+}
+
+function resolveIntegrityProtocols(env: Env): string {
+  const configured = env.INTEGRITY_PROTOCOLS?.trim();
+  if (configured) {
+    return configured;
+  }
+  return DEFAULT_INTEGRITY_PROTOCOLS;
 }
