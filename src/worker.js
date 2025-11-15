@@ -7,7 +7,7 @@ import { SERVICE_DIRECTORY_PROMPT } from "../services/directory.js";
 
 const MODEL_ID = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
 const DEFAULT_INTEGRITY_GATEWAY = "https://withered-mouse-9aee.grabem-holdem-nuts-right.workers.dev";
-const DEFAULT_HIGH_CONFIDENCE_URL = "https://ops-chattia-api.grabem-holdem-nuts-right.workers.dev";
+const DEFAULT_HIGH_CONFIDENCE_URL = "https://ops-chattia-api.grabem-holdem-nuts-right.workers.dev/";
 const BASE_ALLOWED_ORIGINS = ["https://chattiavato-a11y.github.io"]; // baseline allow-list (UI)
 const DEFAULT_INTEGRITY_PROTOCOLS = "CORS,CSP,OPS-CySec-Core,CISA,NIST,PCI-DSS,SHA-384,SHA-512";
 const DEFAULT_HONEYPOT_FIELDS = [
