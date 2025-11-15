@@ -1,3 +1,5 @@
+import { SERVICE_DIRECTORY_PROMPT } from "../services/directory.js";
+
 /**
  * OPS Chattia API — Chat + STT + Integrity Envelope
  * Updated to your spec: SHA-512 HMAC, Integrity headers, protocol/gateway headers, strict CORS/CSP.
@@ -25,31 +27,7 @@ const SYSTEM_PROMPT =
   "Deliver responses that are concise, actionable, and aligned with HCI best practices. Provide step-by-step support " +
   "when helpful, highlight important cautions, and remain compliant with accessibility and privacy expectations.";
 
-const SERVICE_KNOWLEDGE_PROMPT = `Use the following OPS Remote Professional Network catalog as default reference material when answering business, contact center, IT support, or professional services questions.
-
-Service Pillars:
-- Business Operations – Financial hygiene, billing accuracy, procurement visibility, stakeholder updates, and executive dashboards.
-- Contact Center (Beta) – Relationship-first omni-channel agents with sentiment cues, rapid resolution, and refreshed knowledge bases.
-- IT Support (Beta) – Incident-ready pods providing documented triage, help desk tiers I–II, ticketing, incident handling, and integrated telemetry.
-- Professionals – Insight teams delivering predictive analytics, feedback frameworks, and growth-focused engagement models.
-
-Solutions:
-- Business Operations – Billing, payables/receivables, vendor coordination, administrative, marketing, and digital marketing support.
-- Contact Center (Beta) – Multi-channel, relationship-driven CX with rapid-resolution support.
-- IT Support (Beta) – End-to-end IT support, practical help desk, specialized support, and incident handling.
-- Professionals On Demand – Deployable assistants, specialists, consultants for short-term or long-term engagements.
-
-Operational Proof Points:
-- 24/7 follow-the-sun pods, 40% faster resolution, 99.95% availability, 12× security posture improvements (OPS CyberSec Core).
-
-Talent Network Application Highlights:
-- Applicants share crafts, industries, skills, education, certifications, hobbies, continued education, achievements, and values.
-- Guild interest options: Business Operations, Contact Center, IT Support, Professionals, Analytics & Insights.
-- Engagement models: full-time pods, part-time retainers, or project-based sprints.
-
-Contact & Hiring Pathways:
-- Discovery calls, direct OPS consultations, or hiring remote specialists across operations, CX, IT support, and on-demand talent.
-- Confidential intake with responses within one business day.`;
+const SERVICE_KNOWLEDGE_PROMPT = SERVICE_DIRECTORY_PROMPT;
 
 const WARNING_MESSAGE =
   "Apologies, but I cannot execute that request, do you have any questions about our website?";
