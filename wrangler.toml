@@ -1,48 +1,22 @@
-# Integrity Gateway: https://withered-mouse-9aee.grabem-holdem-nuts-right.workers.dev
-# OPS CySec Core Compliance: CORS | CSP | CISA | NIST | PCI DSS | SHA-384 | SHA-512
-name = "ops-chattia-api"
+# wrangler.toml — Integrity Gateway (withered-mouse-9aee…workers.dev)
+name = "ops-integrity-gateway"
 main = "src/worker.js"
 compatibility_date = "2025-11-01"
 workers_dev = true
 
-[ai]
-binding = "AI"
-
-# --- KV namespaces (create in Dashboard, paste IDs here when you have them) ---
 [[kv_namespaces]]
-binding = "OPS_NONCE_KV"
-id = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-preview_id = "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
-
-[[kv_namespaces]]
-binding = "OPS_RATE_KV"
-id = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-preview_id = "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
-
-# --- R2 (optional; for WebLLM artifacts later) ---
-[[r2_buckets]]
-binding = "R2_WEBLLM_MODELS"
-bucket_name = "r2-webllm-models"
-preview_bucket_name = "r2-webllm-models"
+binding   = "OPS_NONCE_KV"
+id        = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+preview_id= "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
 
 [vars]
-LLM_MAX_TOKENS    = "200"
-MAX_AUDIO_BYTES   = "8000000"
-SIG_TTL_SECONDS   = "300"
-INTEGRITY_REQUIRED = "true"
-ALLOW_DASH        = "false"
-ALLOW_WORKERS_DEV = "false"
-INTEGRITY_GATEWAY = "https://withered-mouse-9aee.grabem-holdem-nuts-right.workers.dev"
+UI_ORIGINS          = "https://chattiavato-a11y.github.io"
+INTEGRITY_REQUIRED  = "true"
+ALLOW_DASH          = "false"
+ALLOW_WORKERS_DEV   = "false"
+INTEGRITY_GATEWAY   = "https://withered-mouse-9aee.grabem-holdem-nuts-right.workers.dev"
 INTEGRITY_PROTOCOLS = "CORS,CSP,OPS-CySec-Core,CISA,NIST,PCI-DSS,SHA-384,SHA-512"
+SIG_TTL_SECONDS     = "300"
 
-# These are SECRETS (set in Dashboard or `wrangler secret put` if you ever use CLI):
+# Secrets to set in Dashboard for THIS worker:
 # - SHARED_KEY
-# - UI_ORIGIN_PRIMARY_SECRET            (https://chattiavato-a11y.github.io)
-# - UI_ORIGIN_SECONDARY_SECRET          (your second origin)
-# - AI_LLM_DEFAULT                      (@cf/meta/llama-3.2-1b-instruct)
-# - AI_LLM_BIG                          (@cf/meta/llama-3.1-8b-instruct-fp8)
-# - AI_LLM_PREMIUM                      (@cf/openai/gpt-oss-120b)           # optional
-# - AI_STT_TINY                         (@cf/openai/whisper-tiny-en)
-# - AI_STT_BASE                         (@cf/openai/whisper)
-# - AI_STT_TURBO                        (@cf/openai/whisper-large-v3-turbo)
-# - AI_STT_VENDOR                       (@cf/deepgram/nova-3)
