@@ -62,6 +62,7 @@ const TURNSTILE_SITE_KEY = '0x4AAAAAACBDyXYbdQg180H4';
 const qs = s => document.querySelector(s);
 const log = qs('#chat-log'), form = qs('#chatbot-input-row'), input = qs('#chatbot-input'), send = qs('#chatbot-send');
 const turnstileSlot = qs('#turnstile-slot'), turnstileToken = qs('#turnstile-token');
+let turnstileFallbackTimer = null;
 const state = { conversation:[], isSending:false };
 const session = { terminated:false };
 
@@ -133,22 +134,61 @@ input.addEventListener('input', updateSend);
 
 (function loadTurnstile(){
   if(!turnstileSlot || !TURNSTILE_SITE_KEY) { updateSend(); return; }
+
+  const allowBypass = (reason='unavailable') => {
+    if(!turnstileToken) return;
+    turnstileToken.dataset.require = 'false';
+    turnstileToken.dataset.bypass = reason;
+    updateSend();
+  };
+
+  const cancelFallback = () => {
+    if(turnstileFallbackTimer){ clearTimeout(turnstileFallbackTimer); turnstileFallbackTimer = null; }
+  };
+
+  const scheduleFallback = (reason='timeout', delay=6000) => {
+    cancelFallback();
+    turnstileFallbackTimer = setTimeout(()=> allowBypass(reason), delay);
+  };
+
+  scheduleFallback('timeout', 6000);
+
   const s = document.createElement('script');
   s.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
   s.async = true; s.defer = true;
   s.onload = ()=> {
-    if(!window.turnstile) { updateSend(); return; }
+    if(!window.turnstile) { allowBypass('no_api'); return; }
     const id = window.turnstile.render(turnstileSlot, {
       sitekey: TURNSTILE_SITE_KEY, theme:'auto',
-      callback(token){ turnstileToken.value = token; turnstileToken.dataset.require = 'false'; updateSend(); },
-      'error-callback': ()=>{ turnstileToken.value=''; turnstileToken.dataset.require='true'; updateSend(); },
-      'expired-callback': ()=>{ turnstileToken.value=''; turnstileToken.dataset.require='true'; updateSend(); }
+      callback(token){
+        cancelFallback();
+        turnstileToken.value = token;
+        turnstileToken.dataset.require = 'false';
+        delete turnstileToken.dataset.bypass;
+        updateSend();
+      },
+      'error-callback': ()=>{
+        turnstileToken.value='';
+        turnstileToken.dataset.require='true';
+        updateSend();
+        scheduleFallback('error', 4000);
+      },
+      'expired-callback': ()=>{
+        turnstileToken.value='';
+        turnstileToken.dataset.require='true';
+        updateSend();
+        scheduleFallback('expired', 4000);
+      }
     });
     window.chattiaTurnstile = {
       setToken(t=''){ turnstileToken.value=t; turnstileToken.dataset.require = t? 'false':'true'; updateSend(); },
       clear(requireNew=false){ turnstileToken.value=''; turnstileToken.dataset.require = requireNew? 'true':'false'; updateSend(); },
       resetWidget(){ try{ window.turnstile.reset(id); }catch{} }
     };
+  };
+  s.onerror = ()=>{
+    cancelFallback();
+    allowBypass('load_error');
   };
   document.head.appendChild(s);
 })();
