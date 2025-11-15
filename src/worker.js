@@ -8,6 +8,23 @@ const DEFAULT_INTEGRITY_GATEWAY = "https://withered-mouse-9aee.grabem-holdem-nut
 const BASE_ALLOWED_ORIGINS = ["https://chattiavato-a11y.github.io"]; // baseline allow-list (UI)
 const DEFAULT_INTEGRITY_PROTOCOLS = "CORS,CSP,OPS-CySec-Core,CISA,NIST,PCI-DSS,SHA-384,SHA-512";
 
+const DEFAULT_BM25_THRESHOLD = 1.15;
+
+const STOP_WORDS = {
+  en: new Set([
+    "a","about","an","and","are","as","at","be","by","for","from","how",
+    "in","is","it","of","on","or","our","that","the","their","to","we","what","when"
+  ]),
+  es: new Set([
+    "a","al","como","con","de","del","el","ella","ellas","ellos","en","es","esta","este",
+    "las","los","para","por","que","se","son","su","sus","un","una","y"
+  ])
+};
+
+const WEBSITE_KB = buildWebsiteKnowledgeBase();
+const AVG_DOC_LENGTH =
+  WEBSITE_KB.reduce((acc, doc) => acc + doc.length, 0) / (WEBSITE_KB.length || 1);
+
 const SYSTEM_PROMPT =
   "You are Chattia, an empathetic, security-aware assistant that communicates with clarity and inclusive language. " +
   "Deliver responses that are concise, actionable, and aligned with HCI best practices. Provide step-by-step support " +
@@ -175,6 +192,15 @@ async function handleChatRequest(request, env) {
     const sanitizedMessages = normalized.map(m =>
       m.role === "user" ? { ...m, content: sanitizeText(m.content) } : m
     );
+
+    const lastUserMessage = [...sanitizedMessages]
+      .reverse()
+      .find(m => m.role === "user");
+
+    const defaultFlow = routeWebsiteDefaultFlow(lastUserMessage?.content || "");
+    if (defaultFlow?.type === "kb") {
+      return buildKnowledgeResponse(defaultFlow, env);
+    }
 
     // Ensure system prompt present
     if (!sanitizedMessages.some(m => m.role === "system")) {
@@ -400,11 +426,96 @@ async function buildGuardedResponse(reply, env) {
   });
 }
 
+function routeWebsiteDefaultFlow(userMessage) {
+  const query = sanitizeText(userMessage || "");
+  if (!query) return null;
+
+  const language = detectLanguage(query);
+  const tokens = tokenize(query).filter(t => !STOP_WORDS[language]?.has(t));
+  if (!tokens.length) return null;
+
+  const candidates = WEBSITE_KB.filter(doc => doc.lang === language);
+  if (!candidates.length) return null;
+
+  let best = null;
+  for (const doc of candidates) {
+    const score = scoreDocumentBm25(doc, tokens);
+    if (!best || score > best.score) {
+      best = { doc, score };
+    }
+  }
+
+  if (!best || best.score < DEFAULT_BM25_THRESHOLD) return null;
+
+  const reply = buildWebsiteReply(best.doc, language);
+
+  return {
+    type: "kb",
+    reply,
+    docId: best.doc.id,
+    title: best.doc.title,
+    language,
+    score: best.score
+  };
+}
+
+async function buildKnowledgeResponse(flow, env) {
+  const trimmed = String(flow.reply || "").trim();
+  const digest = await sha512B64(trimmed);
+  const integGateway = resolveIntegrityGateway(env);
+  const integProtocols = resolveIntegrityProtocols(env);
+
+  const usage = {
+    source: flow.docId,
+    title: flow.title,
+    language: flow.language,
+    confidence: Number(flow.score.toFixed(4))
+  };
+
+  return new Response(JSON.stringify({
+    reply: trimmed,
+    model: "bm25-website-default",
+    usage
+  }), {
+    status: 200,
+    headers: {
+      "content-type": "application/json; charset=UTF-8",
+      "cache-control": "no-store",
+      "x-model": "bm25-website-default",
+      "x-reply-digest-sha512": digest,
+      "x-integrity-gateway": integGateway,
+      "x-integrity-protocols": integProtocols,
+      "x-knowledge-source": flow.docId
+    }
+  });
+}
+
 function selectChatModel(env, metadata) {
   const tier = typeof metadata?.tier === "string" ? metadata.tier.toLowerCase() : "";
   if (tier === "big" && env.AI_LLM_BIG) return env.AI_LLM_BIG;
   if (tier === "premium" && env.AI_LLM_PREMIUM) return env.AI_LLM_PREMIUM;
   return env.AI_LLM_DEFAULT || MODEL_ID;
+}
+
+function scoreDocumentBm25(doc, queryTerms) {
+  const k1 = 1.2;
+  const b = 0.75;
+  let score = 0;
+  for (const term of queryTerms) {
+    const freq = doc.termFreq.get(term);
+    if (!freq) continue;
+    const idf = computeIdf(term);
+    const numerator = freq * (k1 + 1);
+    const denominator = freq + k1 * (1 - b + b * (doc.length / (AVG_DOC_LENGTH || 1)));
+    score += idf * (numerator / denominator);
+  }
+  return score;
+}
+
+function buildWebsiteReply(doc, language) {
+  if (language === "es" && doc.summaryEs) return doc.summaryEs;
+  if (language === "en" && doc.summaryEn) return doc.summaryEn;
+  return doc.summary || doc.content;
 }
 
 function selectSttModel(env, prefer) {
@@ -582,4 +693,106 @@ function extractTranscript(res) {
 function clampInt(v, def) {
   const n = Number(v);
   return Number.isFinite(n) ? n : def;
+}
+
+function computeIdf(term) {
+  const docsWithTerm = WEBSITE_KB.reduce(
+    (count, doc) => count + (doc.termFreq.has(term) ? 1 : 0),
+    0
+  );
+  if (!docsWithTerm) return 0;
+  return Math.log(1 + ((WEBSITE_KB.length - docsWithTerm + 0.5) / (docsWithTerm + 0.5)));
+}
+
+function buildWebsiteKnowledgeBase() {
+  const rawDocs = [
+    {
+      id: "service-pillars-en",
+      lang: "en",
+      title: "Service Pillars",
+      summaryEn:
+        "Our operations span Business Operations, Contact Center, IT Support, and Professionals on Demand, each with documented playbooks, omni-channel expertise, resilient IT coverage, and data-driven specialists ready to plug in.",
+      summary:
+        "Our operations span Business Operations, Contact Center, IT Support, and Professionals on Demand, each with documented playbooks, omni-channel expertise, resilient IT coverage, and data-driven specialists ready to plug in.",
+      content: `Business Operations: Playbooks that maintain financial hygiene, stakeholder updates, and executive-ready dashboards. Billing accuracy and revenue protection. Procurement and vendor lifecycle visibility. Contact Center (Beta): Relationship-first agents augmented with insights to nurture loyalty and lifetime value. Omni-channel routing with sentiment cues. Knowledge refresh loops tuned to CX goals. IT Support (Beta): Incident-ready teams aligning security, IT, and business continuity expectations. Documented triage and resolution pathways. Integrated telemetry across ticketing tools. Professionals: Insight teams decoding performance data to spotlight opportunities and ensure growth. Predictive analytics and sprint-ready insights. Feedback frameworks that prioritize user delight.`
+    },
+    {
+      id: "service-pillars-es",
+      lang: "es",
+      title: "Pilares de Servicio",
+      summaryEs:
+        "Nuestras operaciones abarcan Operaciones Comerciales, Contact Center, Soporte de TI y Profesionales a Demanda, combinando playbooks documentados, experiencia omnicanal, cobertura de TI resiliente y especialistas basados en datos listos para integrarse.",
+      summary:
+        "Nuestras operaciones abarcan Operaciones Comerciales, Contact Center, Soporte de TI y Profesionales a Demanda, combinando playbooks documentados, experiencia omnicanal, cobertura de TI resiliente y especialistas basados en datos listos para integrarse.",
+      content: `Operaciones Comerciales: Manuales que mantienen la higiene financiera, actualizaciones a las partes interesadas y tableros listos para ejecutivos. Precisión en la facturación y protección de ingresos. Visibilidad del ciclo de vida de proveedores y compras. Contact Center (Beta): Agentes enfocados en la relación, aumentados con insights para nutrir la lealtad y el valor de por vida. Enrutamiento omnicanal con señales de sentimiento. Ciclos de actualización de conocimiento alineados con los objetivos de CX. Soporte de TI (Beta): Equipos listos para incidentes que alinean seguridad, TI y continuidad del negocio. Rutas de triaje y resolución documentadas. Telemetría integrada en herramientas de tickets. Profesionales: Equipos de insights que descifran datos de desempeño para destacar oportunidades y asegurar el crecimiento. Analítica predictiva y conocimientos listos para sprint. Marcos de retroalimentación que priorizan el deleite del usuario.`
+    },
+    {
+      id: "solutions-en",
+      lang: "en",
+      title: "Solutions Overview",
+      summaryEn:
+        "We deliver Business Operations support, omni-channel Contact Center coverage, end-to-end IT Support across tiers, and Professionals on Demand for flexible engagements and consulting.",
+      summary:
+        "We deliver Business Operations support, omni-channel Contact Center coverage, end-to-end IT Support across tiers, and Professionals on Demand for flexible engagements and consulting.",
+      content: `Business Operations keeps billing, payables, vendor coordination, administrative work, marketing, and digital marketing running with precision. Contact Center (Beta) provides best-in-class multi-channel experiences that are relationship-driven with rapid resolution. IT Support (Beta) covers the full help desk lifecycle with tiers I and II, ticketing, incident handling, and specialized support. Professionals On Demand supply skilled assistants and specialists for short or long-term projects, including consultants.`
+    },
+    {
+      id: "solutions-es",
+      lang: "es",
+      title: "Resumen de Soluciones",
+      summaryEs:
+        "Ofrecemos soporte de Operaciones Comerciales, cobertura omnicanal en el Contact Center, soporte integral de TI en todos los niveles y Profesionales a Demanda para proyectos flexibles y consultoría.",
+      summary:
+        "Ofrecemos soporte de Operaciones Comerciales, cobertura omnicanal en el Contact Center, soporte integral de TI en todos los niveles y Profesionales a Demanda para proyectos flexibles y consultoría.",
+      content: `Operaciones Comerciales mantiene con precisión la facturación, cuentas por pagar, coordinación con proveedores, trabajo administrativo, marketing y marketing digital. Contact Center (Beta) ofrece experiencias multicanal de primer nivel, impulsadas por relaciones y con resolución rápida. Soporte de TI (Beta) cubre todo el ciclo de la mesa de ayuda con niveles I y II, gestión de tickets, manejo de incidentes y soporte especializado. Profesionales a Demanda proporcionan asistentes y especialistas calificados para proyectos de corto o largo plazo, incluidos consultores.`
+    }
+  ];
+
+  return rawDocs.map(doc => {
+    const text = sanitizeText(doc.content || "");
+    const tokens = tokenize(text);
+    const termFreq = new Map();
+    for (const token of tokens) {
+      termFreq.set(token, (termFreq.get(token) || 0) + 1);
+    }
+    return {
+      ...doc,
+      content: text,
+      tokens,
+      termFreq,
+      length: tokens.length || 1
+    };
+  });
+}
+
+function detectLanguage(text) {
+  const lower = text.toLowerCase();
+  let scoreEs = 0;
+  let scoreEn = 0;
+
+  if (/[áéíóúñü¿¡]/i.test(lower)) scoreEs += 2;
+
+  for (const term of ["¿", "qué", "cómo", "dónde", "servicio", "soporte", "hola", "ayuda", "gracias"]) {
+    if (lower.includes(term)) scoreEs += 1;
+  }
+
+  for (const term of ["what", "how", "where", "service", "support", "hello", "thanks", "pricing"]) {
+    if (lower.includes(term)) scoreEn += 1;
+  }
+
+  return scoreEs > scoreEn ? "es" : "en";
+}
+
+function tokenize(text) {
+  const stripped = stripDiacritics(String(text).toLowerCase());
+  return stripped
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+function stripDiacritics(value) {
+  return String(value)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
 }
