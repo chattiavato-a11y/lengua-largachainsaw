@@ -134,16 +134,16 @@ function applySecurityHeaders(res, request, env) {
   return new Response(res.body, { status: res.status, statusText: res.statusText, headers: h });
 }
 
-function resolveIntegrityGateway(env) {
-  const c = (env.INTEGRITY_GATEWAY || "").trim();
+function resolveIntegrityGateway(env){
+  const c = (env.INTEGRITY_GATEWAY||"").trim();
   return c || DEFAULT_INTEGRITY_GATEWAY;
 }
-function resolveIntegrityProtocols(env) {
-  const c = (env.INTEGRITY_PROTOCOLS || "").trim();
+function resolveIntegrityProtocols(env){
+  const c = (env.INTEGRITY_PROTOCOLS||"").trim();
   return c || DEFAULT_INTEGRITY_PROTOCOLS;
 }
 
-function getAllowedOrigin(origin, env) {
+function getAllowedOrigin(origin, env){
   if (!origin) return null;
   const norm = origin.trim().toLowerCase();
   if (!norm) return null;
