@@ -7,6 +7,17 @@ const MODEL_ID = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
 const DEFAULT_INTEGRITY_GATEWAY = "https://withered-mouse-9aee.grabem-holdem-nuts-right.workers.dev";
 const BASE_ALLOWED_ORIGINS = ["https://chattiavato-a11y.github.io"]; // baseline allow-list (UI)
 const DEFAULT_INTEGRITY_PROTOCOLS = "CORS,CSP,OPS-CySec-Core,CISA,NIST,PCI-DSS,SHA-384,SHA-512";
+const DEFAULT_HONEYPOT_FIELDS = [
+  "hp_email",
+  "hp_name",
+  "hp_field",
+  "honeypot",
+  "hp_text",
+  "botcheck",
+  "bot_field",
+  "trap_field"
+];
+const HONEYPOT_BLOCK_TTL_SECONDS = 86400; // 24h default block window
 
 const DEFAULT_BM25_THRESHOLD = 1.15;
 
@@ -54,6 +65,12 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const method = request.method.toUpperCase();
+
+    const activeBlock = await checkHoneypotBan(request, env);
+    if (activeBlock?.blocked) {
+      const res = honeypotBlockedResponse(activeBlock.reason, activeBlock.until);
+      return applySecurityHeaders(res, request, env);
+    }
 
     // Preflight CORS
     if (url.pathname.startsWith("/api/") && method === "OPTIONS") {
@@ -178,7 +195,19 @@ async function handleChatRequest(request, env) {
   if (gate) return gate;
 
   try {
-    const { messages = [], metadata } = await request.json();
+    const body = await request.json();
+
+    const honeypotHit = detectHoneypotInObject(body, env);
+    if (honeypotHit) {
+      await registerHoneypotBan(request, env, honeypotHit);
+      return honeypotBlockedResponse(honeypotHit.reason);
+    }
+
+    const turnstileToken = extractTurnstileToken(body);
+    const turnstileGate = await enforceTurnstile(turnstileToken, request, env);
+    if (turnstileGate) return turnstileGate;
+
+    const { messages = [], metadata } = body;
 
     const normalized = Array.isArray(messages)
       ? messages.filter(m => m && typeof m.content === "string" && m.content.trim())
@@ -262,6 +291,16 @@ async function handleSttRequest(request, env) {
     }
 
     const form = await request.formData();
+    const honeypotHit = detectHoneypotInForm(form, env);
+    if (honeypotHit) {
+      await registerHoneypotBan(request, env, honeypotHit);
+      return honeypotBlockedResponse(honeypotHit.reason);
+    }
+
+    const turnstileToken = extractTurnstileToken(form);
+    const turnstileGate = await enforceTurnstile(turnstileToken, request, env);
+    if (turnstileGate) return turnstileGate;
+
     const audio = form.get("audio");
     if (!(audio instanceof File)) return json({ error: "Audio blob missing" }, 400);
 
@@ -695,104 +734,307 @@ function clampInt(v, def) {
   return Number.isFinite(n) ? n : def;
 }
 
-function computeIdf(term) {
-  const docsWithTerm = WEBSITE_KB.reduce(
-    (count, doc) => count + (doc.termFreq.has(term) ? 1 : 0),
-    0
-  );
-  if (!docsWithTerm) return 0;
-  return Math.log(1 + ((WEBSITE_KB.length - docsWithTerm + 0.5) / (docsWithTerm + 0.5)));
+/* ----------------------------- Honeypot guard ---------------------------- */
+
+async function checkHoneypotBan(request, env) {
+  const kv = getHoneypotKv(env);
+  if (!kv) return null;
+
+  const ip = getClientIp(request);
+  if (!ip) return null;
+
+  const key = `honeypot:block:${ip}`;
+  const stored = await kv.get(key);
+  if (!stored) return null;
+
+  let parsed;
+  try {
+    parsed = JSON.parse(stored);
+  } catch {
+    parsed = { reason: String(stored || "honeypot"), expiresAt: null };
+  }
+
+  return {
+    blocked: true,
+    reason: parsed?.reason || "honeypot",
+    until: parsed?.expiresAt || null
+  };
 }
 
-function buildWebsiteKnowledgeBase() {
-  const rawDocs = [
-    {
-      id: "service-pillars-en",
-      lang: "en",
-      title: "Service Pillars",
-      summaryEn:
-        "Our operations span Business Operations, Contact Center, IT Support, and Professionals on Demand, each with documented playbooks, omni-channel expertise, resilient IT coverage, and data-driven specialists ready to plug in.",
-      summary:
-        "Our operations span Business Operations, Contact Center, IT Support, and Professionals on Demand, each with documented playbooks, omni-channel expertise, resilient IT coverage, and data-driven specialists ready to plug in.",
-      content: `Business Operations: Playbooks that maintain financial hygiene, stakeholder updates, and executive-ready dashboards. Billing accuracy and revenue protection. Procurement and vendor lifecycle visibility. Contact Center (Beta): Relationship-first agents augmented with insights to nurture loyalty and lifetime value. Omni-channel routing with sentiment cues. Knowledge refresh loops tuned to CX goals. IT Support (Beta): Incident-ready teams aligning security, IT, and business continuity expectations. Documented triage and resolution pathways. Integrated telemetry across ticketing tools. Professionals: Insight teams decoding performance data to spotlight opportunities and ensure growth. Predictive analytics and sprint-ready insights. Feedback frameworks that prioritize user delight.`
-    },
-    {
-      id: "service-pillars-es",
-      lang: "es",
-      title: "Pilares de Servicio",
-      summaryEs:
-        "Nuestras operaciones abarcan Operaciones Comerciales, Contact Center, Soporte de TI y Profesionales a Demanda, combinando playbooks documentados, experiencia omnicanal, cobertura de TI resiliente y especialistas basados en datos listos para integrarse.",
-      summary:
-        "Nuestras operaciones abarcan Operaciones Comerciales, Contact Center, Soporte de TI y Profesionales a Demanda, combinando playbooks documentados, experiencia omnicanal, cobertura de TI resiliente y especialistas basados en datos listos para integrarse.",
-      content: `Operaciones Comerciales: Manuales que mantienen la higiene financiera, actualizaciones a las partes interesadas y tableros listos para ejecutivos. Precisión en la facturación y protección de ingresos. Visibilidad del ciclo de vida de proveedores y compras. Contact Center (Beta): Agentes enfocados en la relación, aumentados con insights para nutrir la lealtad y el valor de por vida. Enrutamiento omnicanal con señales de sentimiento. Ciclos de actualización de conocimiento alineados con los objetivos de CX. Soporte de TI (Beta): Equipos listos para incidentes que alinean seguridad, TI y continuidad del negocio. Rutas de triaje y resolución documentadas. Telemetría integrada en herramientas de tickets. Profesionales: Equipos de insights que descifran datos de desempeño para destacar oportunidades y asegurar el crecimiento. Analítica predictiva y conocimientos listos para sprint. Marcos de retroalimentación que priorizan el deleite del usuario.`
-    },
-    {
-      id: "solutions-en",
-      lang: "en",
-      title: "Solutions Overview",
-      summaryEn:
-        "We deliver Business Operations support, omni-channel Contact Center coverage, end-to-end IT Support across tiers, and Professionals on Demand for flexible engagements and consulting.",
-      summary:
-        "We deliver Business Operations support, omni-channel Contact Center coverage, end-to-end IT Support across tiers, and Professionals on Demand for flexible engagements and consulting.",
-      content: `Business Operations keeps billing, payables, vendor coordination, administrative work, marketing, and digital marketing running with precision. Contact Center (Beta) provides best-in-class multi-channel experiences that are relationship-driven with rapid resolution. IT Support (Beta) covers the full help desk lifecycle with tiers I and II, ticketing, incident handling, and specialized support. Professionals On Demand supply skilled assistants and specialists for short or long-term projects, including consultants.`
-    },
-    {
-      id: "solutions-es",
-      lang: "es",
-      title: "Resumen de Soluciones",
-      summaryEs:
-        "Ofrecemos soporte de Operaciones Comerciales, cobertura omnicanal en el Contact Center, soporte integral de TI en todos los niveles y Profesionales a Demanda para proyectos flexibles y consultoría.",
-      summary:
-        "Ofrecemos soporte de Operaciones Comerciales, cobertura omnicanal en el Contact Center, soporte integral de TI en todos los niveles y Profesionales a Demanda para proyectos flexibles y consultoría.",
-      content: `Operaciones Comerciales mantiene con precisión la facturación, cuentas por pagar, coordinación con proveedores, trabajo administrativo, marketing y marketing digital. Contact Center (Beta) ofrece experiencias multicanal de primer nivel, impulsadas por relaciones y con resolución rápida. Soporte de TI (Beta) cubre todo el ciclo de la mesa de ayuda con niveles I y II, gestión de tickets, manejo de incidentes y soporte especializado. Profesionales a Demanda proporcionan asistentes y especialistas calificados para proyectos de corto o largo plazo, incluidos consultores.`
-    }
-  ];
+async function registerHoneypotBan(request, env, detail) {
+  const kv = getHoneypotKv(env);
+  const ip = getClientIp(request);
+  const ttl = getHoneypotBlockTtl(env);
+  const reason = detail?.reason || `honeypot:${detail?.field || "unknown"}`;
 
-  return rawDocs.map(doc => {
-    const text = sanitizeText(doc.content || "");
-    const tokens = tokenize(text);
-    const termFreq = new Map();
-    for (const token of tokens) {
-      termFreq.set(token, (termFreq.get(token) || 0) + 1);
-    }
-    return {
-      ...doc,
-      content: text,
-      tokens,
-      termFreq,
-      length: tokens.length || 1
-    };
+  if (kv && ip) {
+    const key = `honeypot:block:${ip}`;
+    const now = Date.now();
+    const expiresAt = now + ttl * 1000;
+    const payload = JSON.stringify({
+      reason,
+      createdAt: now,
+      expiresAt,
+      field: detail?.field || null,
+      snippet: detail?.snippet || null
+    });
+    await kv.put(key, payload, { expirationTtl: ttl });
+  }
+
+  return reason;
+}
+
+function honeypotBlockedResponse(reason, until) {
+  const payload = {
+    error: "access_denied",
+    reason: reason || "honeypot"
+  };
+  if (until) payload.blocked_until = until;
+
+  return json(payload, 403, {
+    "cache-control": "no-store",
+    "x-honeypot": "blocked",
+    "x-block-reason": reason || "honeypot"
   });
 }
 
-function detectLanguage(text) {
-  const lower = text.toLowerCase();
-  let scoreEs = 0;
-  let scoreEn = 0;
+function detectHoneypotInObject(obj, env) {
+  if (!obj || typeof obj !== "object") return null;
 
-  if (/[áéíóúñü¿¡]/i.test(lower)) scoreEs += 2;
+  const fields = getHoneypotFieldNames(env);
+  const stack = [obj];
+  const seen = new Set();
 
-  for (const term of ["¿", "qué", "cómo", "dónde", "servicio", "soporte", "hola", "ayuda", "gracias"]) {
-    if (lower.includes(term)) scoreEs += 1;
+  while (stack.length) {
+    const current = stack.pop();
+    if (!current || typeof current !== "object") continue;
+    if (seen.has(current)) continue;
+    seen.add(current);
+
+    const entries = Array.isArray(current)
+      ? current.entries()
+      : Object.entries(current);
+
+    for (const [keyRaw, value] of entries) {
+      const key = typeof keyRaw === "string" ? keyRaw : String(keyRaw);
+      const keyLower = key.toLowerCase();
+
+      if (isHoneypotFieldName(keyLower, fields)) {
+        if (isFilledHoneypotValue(value)) {
+          return createHoneypotDetail(key, value);
+        }
+      }
+
+      if (shouldTraverse(value)) {
+        stack.push(value);
+      }
+    }
   }
 
-  for (const term of ["what", "how", "where", "service", "support", "hello", "thanks", "pricing"]) {
-    if (lower.includes(term)) scoreEn += 1;
-  }
-
-  return scoreEs > scoreEn ? "es" : "en";
+  return null;
 }
 
-function tokenize(text) {
-  const stripped = stripDiacritics(String(text).toLowerCase());
-  return stripped
-    .replace(/[^\p{L}\p{N}]+/gu, " ")
-    .split(/\s+/)
+function detectHoneypotInForm(form, env) {
+  if (!form || typeof form.get !== "function" || typeof form.getAll !== "function") {
+    return null;
+  }
+
+  const fields = getHoneypotFieldNames(env);
+  for (const name of form.keys()) {
+    const fieldName = String(name);
+    const lower = fieldName.toLowerCase();
+    if (!isHoneypotFieldName(lower, fields)) continue;
+
+    const all = form.getAll(name) || [];
+    for (const entry of all) {
+      if (typeof entry === "string" && entry.trim()) {
+        return createHoneypotDetail(fieldName, entry);
+      }
+    }
+  }
+
+  return null;
+}
+
+function createHoneypotDetail(field, value) {
+  const snippet = typeof value === "string"
+    ? value.trim().slice(0, 64)
+    : Array.isArray(value)
+      ? value.map(v => String(v)).join(", ").slice(0, 64)
+      : typeof value === "object"
+        ? JSON.stringify(value).slice(0, 64)
+        : String(value);
+
+  return {
+    field,
+    reason: `honeypot:${field.toLowerCase()}`,
+    snippet
+  };
+}
+
+function isFilledHoneypotValue(value) {
+  if (typeof value === "string") return value.trim().length > 0;
+  if (typeof value === "number") return !Number.isNaN(value) && value !== 0;
+  if (Array.isArray(value)) return value.some(v => isFilledHoneypotValue(v));
+  if (shouldTraverse(value)) {
+    return Object.values(value).some(v => isFilledHoneypotValue(v));
+  }
+  return false;
+}
+
+function getHoneypotFieldNames(env) {
+  const fromEnv = (env?.HONEYPOT_FIELDS || "")
+    .split(",")
+    .map(s => s.trim().toLowerCase())
     .filter(Boolean);
+  const merged = new Set([...DEFAULT_HONEYPOT_FIELDS, ...fromEnv]);
+  return Array.from(merged);
 }
 
-function stripDiacritics(value) {
-  return String(value)
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
+function isHoneypotFieldName(name, allowlist) {
+  if (!name) return false;
+  if (allowlist.includes(name)) return true;
+  if (name.includes("honeypot")) return true;
+  if (name.includes("bot")) return true;
+  if (name.includes("trap")) return true;
+  return false;
+}
+
+function shouldTraverse(value) {
+  if (!value) return false;
+  if (Array.isArray(value)) return true;
+  if (typeof value !== "object") return false;
+  if (typeof File !== "undefined" && value instanceof File) return false;
+  if (typeof Blob !== "undefined" && value instanceof Blob) return false;
+  if (value instanceof ArrayBuffer) return false;
+  if (ArrayBuffer.isView && ArrayBuffer.isView(value)) return false;
+  if (typeof Response !== "undefined" && value instanceof Response) return false;
+  if (typeof Request !== "undefined" && value instanceof Request) return false;
+  if (typeof FormData !== "undefined" && value instanceof FormData) return false;
+  if (typeof URLSearchParams !== "undefined" && value instanceof URLSearchParams) return false;
+
+  const tag = Object.prototype.toString.call(value);
+  return tag === "[object Object]" || tag === "[object Array]";
+}
+
+function getHoneypotKv(env) {
+  return env?.OPS_BANLIST_KV || env?.HONEYPOT_KV || env?.OPS_NONCE_KV || null;
+}
+
+function getHoneypotBlockTtl(env) {
+  const raw = env?.HONEYPOT_BLOCK_TTL;
+  const num = Number(raw);
+  if (!Number.isFinite(num) || num <= 0) return HONEYPOT_BLOCK_TTL_SECONDS;
+  return Math.max(300, Math.min(604800, Math.floor(num))); // clamp between 5 min and 7 days
+}
+
+function getClientIp(request) {
+  const headers = request.headers;
+  const direct = headers.get("cf-connecting-ip");
+  if (direct) return direct.trim();
+
+  const forwarded = headers.get("x-forwarded-for");
+  if (forwarded) {
+    const first = forwarded.split(",").map(p => p.trim()).find(Boolean);
+    if (first) return first;
+  }
+
+  const realIp = headers.get("x-real-ip");
+  if (realIp) return realIp.trim();
+
+  return null;
+}
+
+/* --------------------------- Turnstile validation ------------------------ */
+
+function extractTurnstileToken(source) {
+  const keys = [
+    "cf-turnstile-response",
+    "turnstile_response",
+    "turnstile-token",
+    "turnstile_token",
+    "turnstileResponse",
+    "turnstileToken",
+    "turnstile"
+  ];
+
+  if (!source) return null;
+
+  if (typeof FormData !== "undefined" && source instanceof FormData) {
+    for (const key of keys) {
+      const value = source.get(key);
+      if (typeof value === "string" && value.trim()) return value.trim();
+    }
+    return null;
+  }
+
+  if (typeof source === "object") {
+    for (const key of keys) {
+      const value = source[key];
+      if (typeof value === "string" && value.trim()) return value.trim();
+    }
+
+    if (source.metadata && typeof source.metadata === "object") {
+      return extractTurnstileToken(source.metadata);
+    }
+  }
+
+  return null;
+}
+
+async function enforceTurnstile(token, request, env) {
+  const secret = (env?.TURNSTILE_SECRET || "").trim();
+  if (!secret) return null;
+
+  let resolved = typeof token === "string" ? token.trim() : "";
+  if (!resolved) {
+    const headerToken = request.headers.get("cf-turnstile-response") || request.headers.get("x-turnstile-token");
+    if (headerToken) resolved = headerToken.trim();
+  }
+
+  if (!resolved) {
+    return json({ error: "turnstile_required" }, 403, {
+      "cache-control": "no-store",
+      "x-turnstile": "missing"
+    });
+  }
+
+  const params = new URLSearchParams();
+  params.set("secret", secret);
+  params.set("response", resolved);
+  const ip = getClientIp(request);
+  if (ip) params.set("remoteip", ip);
+
+  let result;
+  try {
+    const verify = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
+      method: "POST",
+      body: params,
+      headers: { "content-type": "application/x-www-form-urlencoded" }
+    });
+
+    if (!verify.ok) {
+      return json({ error: "turnstile_unreachable" }, 502, {
+        "cache-control": "no-store",
+        "x-turnstile": String(verify.status)
+      });
+    }
+
+    result = await verify.json();
+  } catch (err) {
+    return json({ error: "turnstile_error" }, 500, {
+      "cache-control": "no-store",
+      "x-turnstile": "exception"
+    });
+  }
+
+  if (!result?.success) {
+    const codes = Array.isArray(result?.["error-codes"]) ? result["error-codes"].join(",") : "failed";
+    return json({ error: "turnstile_failed", code: codes }, 403, {
+      "cache-control": "no-store",
+      "x-turnstile": codes || "failed"
+    });
+  }
+
+  return null;
 }
