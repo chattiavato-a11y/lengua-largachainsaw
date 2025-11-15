@@ -132,71 +132,98 @@ const state={
 
 const integrityMeta = document.querySelector('meta[name="integrity-token"]');
 const INTEGRITY_HEADER = 'X-Integrity';
-const INTEGRITY_TOKEN = integrityMeta?.content?.trim() || '';
+const INTEGRITY_VALUE = integrityMeta?.content?.trim() || 'https://chattiavato-a11y.github.io';
 const INTEGRITY_GATEWAY = 'https://withered-mouse-9aee.grabem-holdem-nuts-right.workers.dev';
 // **HERE GOES INTEGRITY HEADER VALUE (MUST MATCH WORKER POLICY)**
 // **HERE GOES PROTECTED INTEGRITY GATEWAY URL** (OPS CYSEC CORE COMPLIANT)
 const INTEGRITY_PROTOCOLS = 'CORS,CSP,OPS-CySec-Core,CISA,NIST,PCI-DSS,SHA-384,SHA-512';
 const sharedIntegrityHeaders = Object.freeze({
-  [INTEGRITY_HEADER]: INTEGRITY_TOKEN,
+  [INTEGRITY_HEADER]: INTEGRITY_VALUE,
   'X-Integrity-Gateway': INTEGRITY_GATEWAY,
   'X-Integrity-Protocols': INTEGRITY_PROTOCOLS
 });
 
-/* ===== API base routing (GitHub Pages → workers.dev) ===== */
-const UI_ORIGIN = location.origin;
-const API_BASE = (UI_ORIGIN === 'https://chattiavato-a11y.github.io')
-  ? 'https://ops-chattia-api.grabem-holdem-nuts-right.workers.dev'
-  : '';
-// **HERE GOES PRODUCTION WORKER BASE URL UNDER INTEGRITY CONTROLS**
+/* ===== Integrity-config for UI (must match Worker secrets) ===== */
+const API_BASE = 'https://ops-chattia-api.grabem-holdem-nuts-right.workers.dev';
 const CHAT_PATH = '/api/chat';
 const STT_PATH = '/api/stt';
-const CHAT_URL = `${API_BASE}${CHAT_PATH}`; // **HERE GOES PROTECTED CHAT ENDPOINT**
-const STT_URL = `${API_BASE}${STT_PATH}`;   // **HERE GOES PROTECTED STT ENDPOINT**
 const AUTH_URL = `${API_BASE}/auth/issue`;  // **HERE GOES SIGNATURE MINTING ROUTE**
 
 /* ===== Integrity helpers (browser) ===== */
-function randNonceHex(len = 16){
-  const u8 = new Uint8Array(len);
-  crypto.getRandomValues(u8);
+function hexNonce32(){
+  const u8 = crypto.getRandomValues(new Uint8Array(16));
   return [...u8].map(b => b.toString(16).padStart(2,'0')).join('');
 }
 
-async function sha256HexOfString(value){
-  const buf = new TextEncoder().encode(value);
-  const digest = await crypto.subtle.digest('SHA-256', buf);
+async function sha256Hex(input){
+  const enc = typeof input === 'string' ? new TextEncoder().encode(input) : input;
+  const view = enc instanceof Uint8Array ? enc : new Uint8Array(enc);
+  const digest = await crypto.subtle.digest('SHA-256', view);
   return [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2,'0')).join('');
 }
 
-async function signedPost(path, bodyObj){
-  const ts = String(Math.floor(Date.now()/1000));
-  const nonce = randNonceHex(16);
-  const body = JSON.stringify(bodyObj);
-  const body_sha256 = await sha256HexOfString(body);
+async function mintDetachedSignature(path, method, bodySha){
+  const ts = Math.floor(Date.now()/1000);
+  const nonce = hexNonce32();
+  const payload = { ts, nonce, method, path, body_sha256: bodySha };
 
-  const mintResponse = await fetch(AUTH_URL, {
-    method:'POST',
-    headers:{
+  const sigRes = await fetch(AUTH_URL, {
+    method: 'POST',
+    headers: {
       ...sharedIntegrityHeaders,
-      'Content-Type':'application/json'
+      'Content-Type': 'application/json'
     },
-    body: JSON.stringify({ ts, nonce, method:'POST', path, body_sha256 })
+    body: JSON.stringify(payload)
   });
 
-  if(!mintResponse.ok) throw new Error('mint_failed');
-  const { signature } = await mintResponse.json();
-  if(!signature) throw new Error('signature_missing');
+  if (!sigRes.ok) {
+    const text = await sigRes.text().catch(() => '');
+    throw new Error(`auth_issue_failed: ${sigRes.status} ${text}`);
+  }
+
+  const { signature } = await sigRes.json();
+  if (!signature) throw new Error('signature_missing');
+
+  return { signature, ts: String(ts), nonce };
+}
+
+async function signedPost(path, body){
+  const method = 'POST';
+  const bodyJson = JSON.stringify(body);
+  const bodySha = await sha256Hex(bodyJson);
+  const { signature, ts, nonce } = await mintDetachedSignature(path, method, bodySha);
 
   return fetch(`${API_BASE}${path}`, {
-    method:'POST',
-    headers:{
+    method,
+    headers: {
       ...sharedIntegrityHeaders,
-      'Content-Type':'application/json',
-      'X-OPS-Timestamp': ts,
-      'X-OPS-Nonce': nonce,
-      'X-OPS-Signature': signature
+      'Content-Type': 'application/json',
+      'X-Request-Signature': signature,
+      'X-Request-Timestamp': ts,
+      'X-Request-Nonce': nonce
     },
-    body
+    body: bodyJson
+  });
+}
+
+async function signedFormPost(path, formData){
+  const method = 'POST';
+  const digestProbe = new Request('https://example.invalid', { method, body: formData });
+  const bodyBuffer = await digestProbe.arrayBuffer();
+  const contentType = digestProbe.headers.get('content-type') || 'application/octet-stream';
+  const bodySha = await sha256Hex(bodyBuffer);
+  const { signature, ts, nonce } = await mintDetachedSignature(path, method, bodySha);
+
+  return fetch(`${API_BASE}${path}`, {
+    method,
+    headers: {
+      ...sharedIntegrityHeaders,
+      'Content-Type': contentType,
+      'X-Request-Signature': signature,
+      'X-Request-Timestamp': ts,
+      'X-Request-Nonce': nonce
+    },
+    body: bodyBuffer
   });
 }
 
@@ -345,18 +372,13 @@ async function sendToChatbot(locale, origin){
   typingEl.setAttribute('aria-live','assertive');
 
   try{
-    // **HERE GOES CHAT API URL (RELATIVE OR ABSOLUTE ENDPOINT)**
-    const r = await fetch('/api/chat',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({
-        messages:state.conversation,
-        metadata:{ channel:'chattia-web', locale }
-      })
+    const r = await signedPost(CHAT_PATH, {
+      messages: state.conversation,
+      metadata: { channel:'chattia-web', locale }
     });
 
-    if(!response.ok) throw new Error('Network response was not ok');
-    const d = await response.json();
+    if(!r.ok) throw new Error(`chat_failed:${r.status}`);
+    const d = await r.json();
     const reply = (d.reply || 'No reply.').trim();
     typingEl.textContent = reply;
     state.conversation.push({role:'assistant',content:reply});
@@ -547,12 +569,6 @@ window.chattiaTurnstile = {
   }
 };
 
-// ---- Configure API endpoint ----
-const STT_URL = '/api/stt';
-// **HERE GOES PRIMARY STT API URL (RELATIVE PATH OR SAME-ORIGIN ENDPOINT)**
-// const STT_URL = 'https://ops-chattia-api.grabem-holdem-nuts-right.workers.dev/api/stt';
-// **HERE GOES FULLY-QUALIFIED STT URL WHEN USING DIFFERENT ORIGIN**
-
 const $ = s => document.querySelector(s);
 const chatInput = document.querySelector('#chatbot-input'); // will auto-fill transcript here
 
@@ -576,7 +592,7 @@ $('#stt-send')?.addEventListener('click', async () => {
   form.append('prefer', $('#stt-prefer').value || '');      // optional
 
   try {
-    const r = await fetch(STT_URL, { method: 'POST', body: form });
+    const r = await signedFormPost(STT_PATH, form);
     const d = await r.json();
     showResult(r, d);
   } catch {
@@ -622,7 +638,7 @@ $('#mic-btn')?.addEventListener('click', async () => {
   form.append('prefer', $('#stt-prefer').value || '');
 
   try {
-    const r = await fetch(STT_URL, { method: 'POST', body: form });
+    const r = await signedFormPost(STT_PATH, form);
     const d = await r.json();
     showResult(r, d);
   } catch {
