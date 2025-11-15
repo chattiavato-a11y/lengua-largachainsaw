@@ -19,9 +19,26 @@ const DEFAULT_HONEYPOT_FIELDS = [
 ];
 const HONEYPOT_BLOCK_TTL_SECONDS = 86400; // 24h default block window
 
+const DEFAULT_BM25_THRESHOLD = 1.15;
+
+const STOP_WORDS = {
+  en: new Set([
+    "a","about","an","and","are","as","at","be","by","for","from","how",
+    "in","is","it","of","on","or","our","that","the","their","to","we","what","when"
+  ]),
+  es: new Set([
+    "a","al","como","con","de","del","el","ella","ellas","ellos","en","es","esta","este",
+    "las","los","para","por","que","se","son","su","sus","un","una","y"
+  ])
+};
+
+const WEBSITE_KB = buildWebsiteKnowledgeBase();
+const AVG_DOC_LENGTH =
+  WEBSITE_KB.reduce((acc, doc) => acc + doc.length, 0) / (WEBSITE_KB.length || 1);
+
 const SYSTEM_PROMPT =
   "You are Chattia, an empathetic, security-aware assistant that communicates with clarity and inclusive language. " +
-  "Deliver responses that are concise, actionable, and aligned with HCI best practices. Provide step-by-step support " +
+  "Deliver responses that are concise, actionable, and aligned with Cyber-Security Core Governance. Provide step-by-step support " +
   "when helpful, highlight important cautions, and remain compliant with accessibility and privacy expectations.";
 
 const WARNING_MESSAGE =
@@ -204,6 +221,15 @@ async function handleChatRequest(request, env) {
     const sanitizedMessages = normalized.map(m =>
       m.role === "user" ? { ...m, content: sanitizeText(m.content) } : m
     );
+
+    const lastUserMessage = [...sanitizedMessages]
+      .reverse()
+      .find(m => m.role === "user");
+
+    const defaultFlow = routeWebsiteDefaultFlow(lastUserMessage?.content || "");
+    if (defaultFlow?.type === "kb") {
+      return buildKnowledgeResponse(defaultFlow, env);
+    }
 
     // Ensure system prompt present
     if (!sanitizedMessages.some(m => m.role === "system")) {
@@ -439,11 +465,96 @@ async function buildGuardedResponse(reply, env) {
   });
 }
 
+function routeWebsiteDefaultFlow(userMessage) {
+  const query = sanitizeText(userMessage || "");
+  if (!query) return null;
+
+  const language = detectLanguage(query);
+  const tokens = tokenize(query).filter(t => !STOP_WORDS[language]?.has(t));
+  if (!tokens.length) return null;
+
+  const candidates = WEBSITE_KB.filter(doc => doc.lang === language);
+  if (!candidates.length) return null;
+
+  let best = null;
+  for (const doc of candidates) {
+    const score = scoreDocumentBm25(doc, tokens);
+    if (!best || score > best.score) {
+      best = { doc, score };
+    }
+  }
+
+  if (!best || best.score < DEFAULT_BM25_THRESHOLD) return null;
+
+  const reply = buildWebsiteReply(best.doc, language);
+
+  return {
+    type: "kb",
+    reply,
+    docId: best.doc.id,
+    title: best.doc.title,
+    language,
+    score: best.score
+  };
+}
+
+async function buildKnowledgeResponse(flow, env) {
+  const trimmed = String(flow.reply || "").trim();
+  const digest = await sha512B64(trimmed);
+  const integGateway = resolveIntegrityGateway(env);
+  const integProtocols = resolveIntegrityProtocols(env);
+
+  const usage = {
+    source: flow.docId,
+    title: flow.title,
+    language: flow.language,
+    confidence: Number(flow.score.toFixed(4))
+  };
+
+  return new Response(JSON.stringify({
+    reply: trimmed,
+    model: "bm25-website-default",
+    usage
+  }), {
+    status: 200,
+    headers: {
+      "content-type": "application/json; charset=UTF-8",
+      "cache-control": "no-store",
+      "x-model": "bm25-website-default",
+      "x-reply-digest-sha512": digest,
+      "x-integrity-gateway": integGateway,
+      "x-integrity-protocols": integProtocols,
+      "x-knowledge-source": flow.docId
+    }
+  });
+}
+
 function selectChatModel(env, metadata) {
   const tier = typeof metadata?.tier === "string" ? metadata.tier.toLowerCase() : "";
   if (tier === "big" && env.AI_LLM_BIG) return env.AI_LLM_BIG;
   if (tier === "premium" && env.AI_LLM_PREMIUM) return env.AI_LLM_PREMIUM;
   return env.AI_LLM_DEFAULT || MODEL_ID;
+}
+
+function scoreDocumentBm25(doc, queryTerms) {
+  const k1 = 1.2;
+  const b = 0.75;
+  let score = 0;
+  for (const term of queryTerms) {
+    const freq = doc.termFreq.get(term);
+    if (!freq) continue;
+    const idf = computeIdf(term);
+    const numerator = freq * (k1 + 1);
+    const denominator = freq + k1 * (1 - b + b * (doc.length / (AVG_DOC_LENGTH || 1)));
+    score += idf * (numerator / denominator);
+  }
+  return score;
+}
+
+function buildWebsiteReply(doc, language) {
+  if (language === "es" && doc.summaryEs) return doc.summaryEs;
+  if (language === "en" && doc.summaryEn) return doc.summaryEn;
+  return doc.summary || doc.content;
 }
 
 function selectSttModel(env, prefer) {
