@@ -83,7 +83,7 @@ body.dark{--clr-bg:var(--clr-bg-dark);--clr-tx:var(--clr-tx-dark)}
   <div id="chatbot-form-container">
     <form id="chatbot-input-row" autocomplete="off">
       <div id="turnstile-slot" class="turnstile-slot" aria-hidden="true"></div>
-      <input id="turnstile-token" type="hidden" name="cf-turnstile-token" value="" data-require="false">
+      <input id="turnstile-token" type="hidden" name="cf-turnstile-response" value="" data-require="true">
       <label class="honeypot" for="chatbot-company">Company</label>
       <input id="chatbot-company" class="honeypot" type="text" name="company" tabindex="-1" autocomplete="off" aria-hidden="true">
       <input id="chatbot-input" type="text" placeholder="Type your message... [Enter for input]" required maxlength="256"
@@ -260,12 +260,17 @@ const container = qs('#chatbot-container'),
       input = qs('#chatbot-input'),
       send  = qs('#chatbot-send'),
       honeypot = qs('#chatbot-company'),
+      turnstileSlot = qs('#turnstile-slot'),
       turnstileToken = qs('#turnstile-token');
+
+const TURNSTILE_SITE_KEY = '0x4AAAAAACBDyXYbdQg180H4';
 
 const micBtn = qs('#mic-btn');
 const sttStatus = qs('#stt-status');
 
 const isTurnstileRequired = () => Boolean(turnstileToken && turnstileToken.dataset.require === 'true');
+
+let turnstileWidgetId = null;
 
 const sessionGuard = {
   warnings:0,
@@ -372,10 +377,18 @@ async function sendToChatbot(locale, origin){
   typingEl.setAttribute('aria-live','assertive');
 
   try{
-    const r = await signedPost(CHAT_PATH, {
+    const payload = {
       messages: state.conversation,
       metadata: { channel:'chattia-web', locale }
-    });
+    };
+
+    const turnstileValue = turnstileToken?.value.trim();
+    if(turnstileValue){
+      payload['cf-turnstile-response'] = turnstileValue;
+      payload.metadata.turnstile_required = true;
+    }
+
+    const r = await signedPost(CHAT_PATH, payload);
 
     if(!r.ok) throw new Error(`chat_failed:${r.status}`);
     const d = await r.json();
@@ -387,6 +400,8 @@ async function sendToChatbot(locale, origin){
     typingEl.textContent = 'Error: Can’t reach Chattia.';
   }finally{
     state.isSending = false;
+    window.chattiaTurnstile.clear(true);
+    window.chattiaTurnstile.resetWidget();
     updateSendState();
   }
 }
@@ -555,19 +570,66 @@ window.chattiaTurnstile = {
   setToken(token=''){
     if(!turnstileToken) return;
     turnstileToken.value = token;
+    if(token) turnstileToken.dataset.require = 'false';
     updateSendState();
   },
-  clear(){
+  clear(requireNew=false){
     if(!turnstileToken) return;
     turnstileToken.value = '';
+    const shouldRequire = requireNew && turnstileWidgetId !== null;
+    turnstileToken.dataset.require = shouldRequire ? 'true' : 'false';
     updateSendState();
   },
   require(flag=true){
     if(!turnstileToken) return;
     turnstileToken.dataset.require = flag ? 'true' : 'false';
     updateSendState();
+  },
+  resetWidget(){
+    if(!window.turnstile || turnstileWidgetId === null) return;
+    try{ window.turnstile.reset(turnstileWidgetId); }
+    catch(err){ /* no-op */ }
+  },
+  bind(id){
+    turnstileWidgetId = id;
   }
 };
+
+function loadTurnstile(){
+  if(!turnstileSlot || !TURNSTILE_SITE_KEY) return;
+  if(document.getElementById('cf-turnstile-script')) return;
+
+  const script = document.createElement('script');
+  script.id = 'cf-turnstile-script';
+  script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+  script.async = true;
+  script.defer = true;
+  script.onload = () => {
+    if(!window.turnstile) return;
+    window.chattiaTurnstile.require(true);
+    const id = window.turnstile.render(turnstileSlot, {
+      sitekey: TURNSTILE_SITE_KEY,
+      theme: 'auto',
+      callback(token){
+        window.chattiaTurnstile.setToken(token);
+      },
+      'error-callback': () => {
+        window.chattiaTurnstile.clear(true);
+        setTimeout(() => window.chattiaTurnstile.resetWidget(), 0);
+      },
+      'expired-callback': () => {
+        window.chattiaTurnstile.clear(true);
+        setTimeout(() => window.chattiaTurnstile.resetWidget(), 0);
+      }
+    });
+    window.chattiaTurnstile.bind(id);
+  };
+  script.onerror = () => {
+    window.chattiaTurnstile.require(false);
+  };
+
+  document.head.appendChild(script);
+}
 
 const $ = s => document.querySelector(s);
 const chatInput = document.querySelector('#chatbot-input'); // will auto-fill transcript here
@@ -585,11 +647,18 @@ function showResult(resp, data) {
 $('#stt-send')?.addEventListener('click', async () => {
   const f = $('#stt-file')?.files?.[0];
   if (!f) { $('#stt-out').textContent = 'Pick an audio file.'; return; }
+  if(isTurnstileRequired() && !(turnstileToken?.value.trim())) {
+    $('#stt-out').textContent = 'Complete the security check first.';
+    return;
+  }
 
   const form = new FormData();
   form.append('audio', f);                                  // REQUIRED name
   form.append('lang', $('#stt-lang').value || 'en');        // optional
   form.append('prefer', $('#stt-prefer').value || '');      // optional
+
+  const turnstileValue = turnstileToken?.value.trim();
+  if(turnstileValue) form.set('cf-turnstile-response', turnstileValue);
 
   try {
     const r = await signedFormPost(STT_PATH, form);
@@ -598,6 +667,8 @@ $('#stt-send')?.addEventListener('click', async () => {
   } catch {
     $('#stt-out').textContent = 'Network error';
   }
+  window.chattiaTurnstile.clear(true);
+  window.chattiaTurnstile.resetWidget();
 });
 
 // ---------- B) Microphone (record) -> /api/stt ----------
@@ -606,6 +677,10 @@ let media, rec, chunks = [], recording = false;
 
 $('#mic-btn')?.addEventListener('click', async () => {
   if (!recording) {
+    if(isTurnstileRequired() && !(turnstileToken?.value.trim())) {
+      $('#stt-out').textContent = 'Complete the security check first.';
+      return;
+    }
     try {
       chunks = [];
       media = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -637,6 +712,9 @@ $('#mic-btn')?.addEventListener('click', async () => {
   form.append('lang', $('#stt-lang').value || 'en');
   form.append('prefer', $('#stt-prefer').value || '');
 
+  const turnstileValue = turnstileToken?.value.trim();
+  if(turnstileValue) form.set('cf-turnstile-response', turnstileValue);
+
   try {
     const r = await signedFormPost(STT_PATH, form);
     const d = await r.json();
@@ -644,7 +722,11 @@ $('#mic-btn')?.addEventListener('click', async () => {
   } catch {
     $('#stt-out').textContent = 'Network error';
   }
+  window.chattiaTurnstile.clear(true);
+  window.chattiaTurnstile.resetWidget();
 });
+
+loadTurnstile();
 </script>
 </body>
 </html>

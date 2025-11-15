@@ -1,3 +1,5 @@
+import { SERVICE_DIRECTORY_PROMPT } from "../services/directory.js";
+
 /**
  * OPS Chattia API — Chat + STT + Integrity Envelope
  * Updated to your spec: SHA-512 HMAC, Integrity headers, protocol/gateway headers, strict CORS/CSP.
@@ -5,6 +7,7 @@
 
 const MODEL_ID = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
 const DEFAULT_INTEGRITY_GATEWAY = "https://withered-mouse-9aee.grabem-holdem-nuts-right.workers.dev";
+const DEFAULT_HIGH_CONFIDENCE_URL = "https://ops-chattia-api.grabem-holdem-nuts-right.workers.dev/";
 const BASE_ALLOWED_ORIGINS = ["https://chattiavato-a11y.github.io"]; // baseline allow-list (UI)
 const DEFAULT_INTEGRITY_PROTOCOLS = "CORS,CSP,OPS-CySec-Core,CISA,NIST,PCI-DSS,SHA-384,SHA-512";
 const DEFAULT_HONEYPOT_FIELDS = [
@@ -40,6 +43,8 @@ const SYSTEM_PROMPT =
   "You are Chattia, an empathetic, security-aware assistant that communicates with clarity and inclusive language. " +
   "Deliver responses that are concise, actionable, and aligned with Cyber-Security Core Governance. Provide step-by-step support " +
   "when helpful, highlight important cautions, and remain compliant with accessibility and privacy expectations.";
+
+const SERVICE_KNOWLEDGE_PROMPT = SERVICE_DIRECTORY_PROMPT;
 
 const WARNING_MESSAGE =
   "Apologies, but I cannot execute that request, do you have any questions about our website?";
@@ -232,28 +237,61 @@ async function handleChatRequest(request, env) {
     }
 
     // Ensure system prompt present
-    if (!sanitizedMessages.some(m => m.role === "system")) {
+    if (!sanitizedMessages.some(m => m.role === "system" && m.content.includes("security-aware assistant"))) {
       sanitizedMessages.unshift({ role: "system", content: SYSTEM_PROMPT });
     }
 
-    // Model selection (supports metadata.tier = "big" | "premium")
-    const chatModel = selectChatModel(env, metadata);
+    // Inject service directory knowledge base if not already present
+    const hasServiceKnowledge = sanitizedMessages.some(
+      m => m.role === "system" && m.content.includes("OPS Remote Professional Network catalog")
+    );
+    if (!hasServiceKnowledge) {
+      const insertionIndex = sanitizedMessages.findIndex(m => m.role !== "system");
+      if (insertionIndex === -1) {
+        sanitizedMessages.push({ role: "system", content: SERVICE_KNOWLEDGE_PROMPT });
+      } else {
+        sanitizedMessages.splice(insertionIndex, 0, { role: "system", content: SERVICE_KNOWLEDGE_PROMPT });
+      }
+    }
 
-    const aiResponse = await env.AI.run(chatModel, {
+    // Model selection (supports metadata.tier = "big" | "premium")
+    let chatModel = selectChatModel(env, metadata);
+
+    let aiResponse = await env.AI.run(chatModel, {
       messages: sanitizedMessages,
       max_tokens: getMaxTokens(env),
       temperature: 0.3,
       metadata
     });
 
-    const reply =
+    let reply =
       (typeof aiResponse === "string" && aiResponse) ||
       aiResponse?.response ||
       aiResponse?.result ||
       aiResponse?.output_text ||
       "I’m unable to respond right now.";
 
-    const trimmed = String(reply).trim();
+    let trimmed = String(reply).trim();
+    let confidence = assessConfidence(trimmed, aiResponse);
+    let escalated = Boolean(body?.metadata?.escalated);
+
+    if (confidence.level === "low" && !escalated) {
+      const escalation = await escalateHighConfidenceChat({
+        body,
+        sanitizedMessages,
+        request,
+        env
+      });
+      if (escalation?.reply) {
+        reply = escalation.reply;
+        trimmed = String(reply).trim();
+        confidence = { level: "high", reasons: ["escalated"] };
+        aiResponse = escalation.aiResponse ?? aiResponse;
+        chatModel = escalation.model ?? chatModel;
+        escalated = true;
+      }
+    }
+
     const replyDigest = await sha512B64(trimmed);
     const integGateway = resolveIntegrityGateway(env);
     const integProtocols = resolveIntegrityProtocols(env);
@@ -261,7 +299,10 @@ async function handleChatRequest(request, env) {
     return new Response(JSON.stringify({
       reply: trimmed,
       model: chatModel,
-      usage: aiResponse?.usage ?? null
+      usage: aiResponse?.usage ?? null,
+      confidence: confidence.level,
+      confidence_reasons: confidence.reasons,
+      escalated
     }), {
       status: 200,
       headers: {
@@ -270,7 +311,10 @@ async function handleChatRequest(request, env) {
         "x-model": chatModel,
         "x-reply-digest-sha512": replyDigest,
         "x-integrity-gateway": integGateway,
-        "x-integrity-protocols": integProtocols
+        "x-integrity-protocols": integProtocols,
+        "x-confidence-level": confidence.level,
+        "x-confidence-reasons": Array.isArray(confidence.reasons) ? confidence.reasons.join(",") : "",
+        "x-escalated": escalated ? "true" : "false"
       }
     });
 
@@ -585,6 +629,110 @@ function getMaxTokens(env) {
   const v = env.LLM_MAX_TOKENS ? Number(env.LLM_MAX_TOKENS) : NaN;
   if (!Number.isFinite(v) || v <= 0) return 768;
   return Math.min(1024, v);
+}
+
+function resolveHighConfidenceUrl(env) {
+  const fromEnv = (env?.HIGH_CONFIDENCE_LLM_URL || env?.AI_LLM_ESCALATION_URL || "").trim();
+  if (fromEnv) return fromEnv;
+  return DEFAULT_HIGH_CONFIDENCE_URL;
+}
+
+function assessConfidence(reply, aiResponse) {
+  const trimmed = (reply || "").trim();
+  if (!trimmed) return { level: "low", reasons: ["empty"] };
+
+  const lower = trimmed.toLowerCase();
+  const uncertainPattern = /(i\s+(am|\'m)\s+(not\s+)?sure|i\s+(do\s+not|don't)\s+know|not\s+certain|maybe|perhaps|might be|unable to|cannot|can't)/i;
+  const refusalPattern = /(i\s*am\s*sorry|i\'m\s*sorry|cannot\s+comply|unable\s+to\s+assist|apologies,?\s+but)/i;
+  const informativePattern = /(business operations|contact center|it support|professionals|ops\s+remote|follow-the-sun|availability|resolution)/i;
+
+  if (uncertainPattern.test(lower) || refusalPattern.test(lower)) {
+    return { level: "low", reasons: ["uncertain_tone"] };
+  }
+
+  const lengthScore = trimmed.length;
+  const usageTokens = Number(aiResponse?.usage?.total_tokens ?? aiResponse?.usage?.totalTokens ?? 0);
+
+  if (informativePattern.test(lower) && lengthScore >= 160) {
+    return { level: "high", reasons: ["rich_service_context"] };
+  }
+
+  if (lengthScore < 80 && usageTokens < 150) {
+    return { level: "low", reasons: ["brief"] };
+  }
+
+  if (informativePattern.test(lower) || lengthScore >= 120) {
+    return { level: "high", reasons: ["detailed"] };
+  }
+
+  return { level: "medium", reasons: ["default"] };
+}
+
+async function escalateHighConfidenceChat({ body, sanitizedMessages, request, env }) {
+  const baseUrl = resolveHighConfidenceUrl(env);
+  if (!baseUrl) return null;
+
+  let target;
+  try {
+    target = new URL("/api/chat", baseUrl).toString();
+  } catch {
+    return null;
+  }
+
+  const metadata = {
+    ...(body?.metadata || {}),
+    escalated: true,
+    tier: body?.metadata?.tier || "premium"
+  };
+
+  const payload = {
+    messages: sanitizedMessages,
+    metadata
+  };
+
+  const headers = new Headers({ "content-type": "application/json" });
+  const passThroughHeaders = [
+    "x-integrity",
+    "x-integrity-gateway",
+    "x-integrity-protocols",
+    "x-request-signature",
+    "x-request-timestamp",
+    "x-request-nonce"
+  ];
+  for (const key of passThroughHeaders) {
+    const value = request.headers.get(key);
+    if (value) headers.set(key, value);
+  }
+
+  try {
+    const res = await fetch(target, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(payload)
+    });
+
+    if (!res.ok) return null;
+    const data = await res.json();
+    const fallbackReply =
+      (typeof data === "string" && data) ||
+      data?.reply ||
+      data?.response ||
+      data?.result ||
+      data?.output_text;
+
+    if (!fallbackReply) return null;
+
+    return {
+      reply: fallbackReply,
+      aiResponse: {
+        response: fallbackReply,
+        usage: data?.usage ?? null
+      },
+      model: data?.model || data?.x_model || "escalated"
+    };
+  } catch (err) {
+    return null;
+  }
 }
 
 /* ---------------------------- Security Headers --------------------------- */
