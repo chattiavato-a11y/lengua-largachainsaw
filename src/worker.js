@@ -5,13 +5,51 @@
 
 const MODEL_ID = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
 const DEFAULT_INTEGRITY_GATEWAY = "https://withered-mouse-9aee.grabem-holdem-nuts-right.workers.dev";
+const DEFAULT_HIGH_CONFIDENCE_URL = "https://ops-chattia-api.grabem-holdem-nuts-right.workers.dev";
 const BASE_ALLOWED_ORIGINS = ["https://chattiavato-a11y.github.io"]; // baseline allow-list (UI)
 const DEFAULT_INTEGRITY_PROTOCOLS = "CORS,CSP,OPS-CySec-Core,CISA,NIST,PCI-DSS,SHA-384,SHA-512";
+const DEFAULT_HONEYPOT_FIELDS = [
+  "hp_email",
+  "hp_name",
+  "hp_field",
+  "honeypot",
+  "hp_text",
+  "botcheck",
+  "bot_field",
+  "trap_field"
+];
+const HONEYPOT_BLOCK_TTL_SECONDS = 86400; // 24h default block window
 
 const SYSTEM_PROMPT =
   "You are Chattia, an empathetic, security-aware assistant that communicates with clarity and inclusive language. " +
   "Deliver responses that are concise, actionable, and aligned with HCI best practices. Provide step-by-step support " +
   "when helpful, highlight important cautions, and remain compliant with accessibility and privacy expectations.";
+
+const SERVICE_KNOWLEDGE_PROMPT = `Use the following OPS Remote Professional Network catalog as default reference material when answering business, contact center, IT support, or professional services questions.
+
+Service Pillars:
+- Business Operations – Financial hygiene, billing accuracy, procurement visibility, stakeholder updates, and executive dashboards.
+- Contact Center (Beta) – Relationship-first omni-channel agents with sentiment cues, rapid resolution, and refreshed knowledge bases.
+- IT Support (Beta) – Incident-ready pods providing documented triage, help desk tiers I–II, ticketing, incident handling, and integrated telemetry.
+- Professionals – Insight teams delivering predictive analytics, feedback frameworks, and growth-focused engagement models.
+
+Solutions:
+- Business Operations – Billing, payables/receivables, vendor coordination, administrative, marketing, and digital marketing support.
+- Contact Center (Beta) – Multi-channel, relationship-driven CX with rapid-resolution support.
+- IT Support (Beta) – End-to-end IT support, practical help desk, specialized support, and incident handling.
+- Professionals On Demand – Deployable assistants, specialists, consultants for short-term or long-term engagements.
+
+Operational Proof Points:
+- 24/7 follow-the-sun pods, 40% faster resolution, 99.95% availability, 12× security posture improvements (OPS CyberSec Core).
+
+Talent Network Application Highlights:
+- Applicants share crafts, industries, skills, education, certifications, hobbies, continued education, achievements, and values.
+- Guild interest options: Business Operations, Contact Center, IT Support, Professionals, Analytics & Insights.
+- Engagement models: full-time pods, part-time retainers, or project-based sprints.
+
+Contact & Hiring Pathways:
+- Discovery calls, direct OPS consultations, or hiring remote specialists across operations, CX, IT support, and on-demand talent.
+- Confidential intake with responses within one business day.`;
 
 const WARNING_MESSAGE =
   "Apologies, but I cannot execute that request, do you have any questions about our website?";
@@ -37,6 +75,12 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const method = request.method.toUpperCase();
+
+    const activeBlock = await checkHoneypotBan(request, env);
+    if (activeBlock?.blocked) {
+      const res = honeypotBlockedResponse(activeBlock.reason, activeBlock.until);
+      return applySecurityHeaders(res, request, env);
+    }
 
     // Preflight CORS
     if (url.pathname.startsWith("/api/") && method === "OPTIONS") {
@@ -161,7 +205,19 @@ async function handleChatRequest(request, env) {
   if (gate) return gate;
 
   try {
-    const { messages = [], metadata } = await request.json();
+    const body = await request.json();
+
+    const honeypotHit = detectHoneypotInObject(body, env);
+    if (honeypotHit) {
+      await registerHoneypotBan(request, env, honeypotHit);
+      return honeypotBlockedResponse(honeypotHit.reason);
+    }
+
+    const turnstileToken = extractTurnstileToken(body);
+    const turnstileGate = await enforceTurnstile(turnstileToken, request, env);
+    if (turnstileGate) return turnstileGate;
+
+    const { messages = [], metadata } = body;
 
     const normalized = Array.isArray(messages)
       ? messages.filter(m => m && typeof m.content === "string" && m.content.trim())
@@ -177,28 +233,61 @@ async function handleChatRequest(request, env) {
     );
 
     // Ensure system prompt present
-    if (!sanitizedMessages.some(m => m.role === "system")) {
+    if (!sanitizedMessages.some(m => m.role === "system" && m.content.includes("security-aware assistant"))) {
       sanitizedMessages.unshift({ role: "system", content: SYSTEM_PROMPT });
     }
 
-    // Model selection (supports metadata.tier = "big" | "premium")
-    const chatModel = selectChatModel(env, metadata);
+    // Inject service directory knowledge base if not already present
+    const hasServiceKnowledge = sanitizedMessages.some(
+      m => m.role === "system" && m.content.includes("OPS Remote Professional Network catalog")
+    );
+    if (!hasServiceKnowledge) {
+      const insertionIndex = sanitizedMessages.findIndex(m => m.role !== "system");
+      if (insertionIndex === -1) {
+        sanitizedMessages.push({ role: "system", content: SERVICE_KNOWLEDGE_PROMPT });
+      } else {
+        sanitizedMessages.splice(insertionIndex, 0, { role: "system", content: SERVICE_KNOWLEDGE_PROMPT });
+      }
+    }
 
-    const aiResponse = await env.AI.run(chatModel, {
+    // Model selection (supports metadata.tier = "big" | "premium")
+    let chatModel = selectChatModel(env, metadata);
+
+    let aiResponse = await env.AI.run(chatModel, {
       messages: sanitizedMessages,
       max_tokens: getMaxTokens(env),
       temperature: 0.3,
       metadata
     });
 
-    const reply =
+    let reply =
       (typeof aiResponse === "string" && aiResponse) ||
       aiResponse?.response ||
       aiResponse?.result ||
       aiResponse?.output_text ||
       "I’m unable to respond right now.";
 
-    const trimmed = String(reply).trim();
+    let trimmed = String(reply).trim();
+    let confidence = assessConfidence(trimmed, aiResponse);
+    let escalated = Boolean(body?.metadata?.escalated);
+
+    if (confidence.level === "low" && !escalated) {
+      const escalation = await escalateHighConfidenceChat({
+        body,
+        sanitizedMessages,
+        request,
+        env
+      });
+      if (escalation?.reply) {
+        reply = escalation.reply;
+        trimmed = String(reply).trim();
+        confidence = { level: "high", reasons: ["escalated"] };
+        aiResponse = escalation.aiResponse ?? aiResponse;
+        chatModel = escalation.model ?? chatModel;
+        escalated = true;
+      }
+    }
+
     const replyDigest = await sha512B64(trimmed);
     const integGateway = resolveIntegrityGateway(env);
     const integProtocols = resolveIntegrityProtocols(env);
@@ -206,7 +295,10 @@ async function handleChatRequest(request, env) {
     return new Response(JSON.stringify({
       reply: trimmed,
       model: chatModel,
-      usage: aiResponse?.usage ?? null
+      usage: aiResponse?.usage ?? null,
+      confidence: confidence.level,
+      confidence_reasons: confidence.reasons,
+      escalated
     }), {
       status: 200,
       headers: {
@@ -215,7 +307,10 @@ async function handleChatRequest(request, env) {
         "x-model": chatModel,
         "x-reply-digest-sha512": replyDigest,
         "x-integrity-gateway": integGateway,
-        "x-integrity-protocols": integProtocols
+        "x-integrity-protocols": integProtocols,
+        "x-confidence-level": confidence.level,
+        "x-confidence-reasons": Array.isArray(confidence.reasons) ? confidence.reasons.join(",") : "",
+        "x-escalated": escalated ? "true" : "false"
       }
     });
 
@@ -236,6 +331,16 @@ async function handleSttRequest(request, env) {
     }
 
     const form = await request.formData();
+    const honeypotHit = detectHoneypotInForm(form, env);
+    if (honeypotHit) {
+      await registerHoneypotBan(request, env, honeypotHit);
+      return honeypotBlockedResponse(honeypotHit.reason);
+    }
+
+    const turnstileToken = extractTurnstileToken(form);
+    const turnstileGate = await enforceTurnstile(turnstileToken, request, env);
+    if (turnstileGate) return turnstileGate;
+
     const audio = form.get("audio");
     if (!(audio instanceof File)) return json({ error: "Audio blob missing" }, 400);
 
@@ -437,6 +542,110 @@ function getMaxTokens(env) {
   return Math.min(1024, v);
 }
 
+function resolveHighConfidenceUrl(env) {
+  const fromEnv = (env?.HIGH_CONFIDENCE_LLM_URL || env?.AI_LLM_ESCALATION_URL || "").trim();
+  if (fromEnv) return fromEnv;
+  return DEFAULT_HIGH_CONFIDENCE_URL;
+}
+
+function assessConfidence(reply, aiResponse) {
+  const trimmed = (reply || "").trim();
+  if (!trimmed) return { level: "low", reasons: ["empty"] };
+
+  const lower = trimmed.toLowerCase();
+  const uncertainPattern = /(i\s+(am|\'m)\s+(not\s+)?sure|i\s+(do\s+not|don't)\s+know|not\s+certain|maybe|perhaps|might be|unable to|cannot|can't)/i;
+  const refusalPattern = /(i\s*am\s*sorry|i\'m\s*sorry|cannot\s+comply|unable\s+to\s+assist|apologies,?\s+but)/i;
+  const informativePattern = /(business operations|contact center|it support|professionals|ops\s+remote|follow-the-sun|availability|resolution)/i;
+
+  if (uncertainPattern.test(lower) || refusalPattern.test(lower)) {
+    return { level: "low", reasons: ["uncertain_tone"] };
+  }
+
+  const lengthScore = trimmed.length;
+  const usageTokens = Number(aiResponse?.usage?.total_tokens ?? aiResponse?.usage?.totalTokens ?? 0);
+
+  if (informativePattern.test(lower) && lengthScore >= 160) {
+    return { level: "high", reasons: ["rich_service_context"] };
+  }
+
+  if (lengthScore < 80 && usageTokens < 150) {
+    return { level: "low", reasons: ["brief"] };
+  }
+
+  if (informativePattern.test(lower) || lengthScore >= 120) {
+    return { level: "high", reasons: ["detailed"] };
+  }
+
+  return { level: "medium", reasons: ["default"] };
+}
+
+async function escalateHighConfidenceChat({ body, sanitizedMessages, request, env }) {
+  const baseUrl = resolveHighConfidenceUrl(env);
+  if (!baseUrl) return null;
+
+  let target;
+  try {
+    target = new URL("/api/chat", baseUrl).toString();
+  } catch {
+    return null;
+  }
+
+  const metadata = {
+    ...(body?.metadata || {}),
+    escalated: true,
+    tier: body?.metadata?.tier || "premium"
+  };
+
+  const payload = {
+    messages: sanitizedMessages,
+    metadata
+  };
+
+  const headers = new Headers({ "content-type": "application/json" });
+  const passThroughHeaders = [
+    "x-integrity",
+    "x-integrity-gateway",
+    "x-integrity-protocols",
+    "x-request-signature",
+    "x-request-timestamp",
+    "x-request-nonce"
+  ];
+  for (const key of passThroughHeaders) {
+    const value = request.headers.get(key);
+    if (value) headers.set(key, value);
+  }
+
+  try {
+    const res = await fetch(target, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(payload)
+    });
+
+    if (!res.ok) return null;
+    const data = await res.json();
+    const fallbackReply =
+      (typeof data === "string" && data) ||
+      data?.reply ||
+      data?.response ||
+      data?.result ||
+      data?.output_text;
+
+    if (!fallbackReply) return null;
+
+    return {
+      reply: fallbackReply,
+      aiResponse: {
+        response: fallbackReply,
+        usage: data?.usage ?? null
+      },
+      model: data?.model || data?.x_model || "escalated"
+    };
+  } catch (err) {
+    return null;
+  }
+}
+
 /* ---------------------------- Security Headers --------------------------- */
 
 function applySecurityHeaders(response, request, env) {
@@ -582,4 +791,309 @@ function extractTranscript(res) {
 function clampInt(v, def) {
   const n = Number(v);
   return Number.isFinite(n) ? n : def;
+}
+
+/* ----------------------------- Honeypot guard ---------------------------- */
+
+async function checkHoneypotBan(request, env) {
+  const kv = getHoneypotKv(env);
+  if (!kv) return null;
+
+  const ip = getClientIp(request);
+  if (!ip) return null;
+
+  const key = `honeypot:block:${ip}`;
+  const stored = await kv.get(key);
+  if (!stored) return null;
+
+  let parsed;
+  try {
+    parsed = JSON.parse(stored);
+  } catch {
+    parsed = { reason: String(stored || "honeypot"), expiresAt: null };
+  }
+
+  return {
+    blocked: true,
+    reason: parsed?.reason || "honeypot",
+    until: parsed?.expiresAt || null
+  };
+}
+
+async function registerHoneypotBan(request, env, detail) {
+  const kv = getHoneypotKv(env);
+  const ip = getClientIp(request);
+  const ttl = getHoneypotBlockTtl(env);
+  const reason = detail?.reason || `honeypot:${detail?.field || "unknown"}`;
+
+  if (kv && ip) {
+    const key = `honeypot:block:${ip}`;
+    const now = Date.now();
+    const expiresAt = now + ttl * 1000;
+    const payload = JSON.stringify({
+      reason,
+      createdAt: now,
+      expiresAt,
+      field: detail?.field || null,
+      snippet: detail?.snippet || null
+    });
+    await kv.put(key, payload, { expirationTtl: ttl });
+  }
+
+  return reason;
+}
+
+function honeypotBlockedResponse(reason, until) {
+  const payload = {
+    error: "access_denied",
+    reason: reason || "honeypot"
+  };
+  if (until) payload.blocked_until = until;
+
+  return json(payload, 403, {
+    "cache-control": "no-store",
+    "x-honeypot": "blocked",
+    "x-block-reason": reason || "honeypot"
+  });
+}
+
+function detectHoneypotInObject(obj, env) {
+  if (!obj || typeof obj !== "object") return null;
+
+  const fields = getHoneypotFieldNames(env);
+  const stack = [obj];
+  const seen = new Set();
+
+  while (stack.length) {
+    const current = stack.pop();
+    if (!current || typeof current !== "object") continue;
+    if (seen.has(current)) continue;
+    seen.add(current);
+
+    const entries = Array.isArray(current)
+      ? current.entries()
+      : Object.entries(current);
+
+    for (const [keyRaw, value] of entries) {
+      const key = typeof keyRaw === "string" ? keyRaw : String(keyRaw);
+      const keyLower = key.toLowerCase();
+
+      if (isHoneypotFieldName(keyLower, fields)) {
+        if (isFilledHoneypotValue(value)) {
+          return createHoneypotDetail(key, value);
+        }
+      }
+
+      if (shouldTraverse(value)) {
+        stack.push(value);
+      }
+    }
+  }
+
+  return null;
+}
+
+function detectHoneypotInForm(form, env) {
+  if (!form || typeof form.get !== "function" || typeof form.getAll !== "function") {
+    return null;
+  }
+
+  const fields = getHoneypotFieldNames(env);
+  for (const name of form.keys()) {
+    const fieldName = String(name);
+    const lower = fieldName.toLowerCase();
+    if (!isHoneypotFieldName(lower, fields)) continue;
+
+    const all = form.getAll(name) || [];
+    for (const entry of all) {
+      if (typeof entry === "string" && entry.trim()) {
+        return createHoneypotDetail(fieldName, entry);
+      }
+    }
+  }
+
+  return null;
+}
+
+function createHoneypotDetail(field, value) {
+  const snippet = typeof value === "string"
+    ? value.trim().slice(0, 64)
+    : Array.isArray(value)
+      ? value.map(v => String(v)).join(", ").slice(0, 64)
+      : typeof value === "object"
+        ? JSON.stringify(value).slice(0, 64)
+        : String(value);
+
+  return {
+    field,
+    reason: `honeypot:${field.toLowerCase()}`,
+    snippet
+  };
+}
+
+function isFilledHoneypotValue(value) {
+  if (typeof value === "string") return value.trim().length > 0;
+  if (typeof value === "number") return !Number.isNaN(value) && value !== 0;
+  if (Array.isArray(value)) return value.some(v => isFilledHoneypotValue(v));
+  if (shouldTraverse(value)) {
+    return Object.values(value).some(v => isFilledHoneypotValue(v));
+  }
+  return false;
+}
+
+function getHoneypotFieldNames(env) {
+  const fromEnv = (env?.HONEYPOT_FIELDS || "")
+    .split(",")
+    .map(s => s.trim().toLowerCase())
+    .filter(Boolean);
+  const merged = new Set([...DEFAULT_HONEYPOT_FIELDS, ...fromEnv]);
+  return Array.from(merged);
+}
+
+function isHoneypotFieldName(name, allowlist) {
+  if (!name) return false;
+  if (allowlist.includes(name)) return true;
+  if (name.includes("honeypot")) return true;
+  if (name.includes("bot")) return true;
+  if (name.includes("trap")) return true;
+  return false;
+}
+
+function shouldTraverse(value) {
+  if (!value) return false;
+  if (Array.isArray(value)) return true;
+  if (typeof value !== "object") return false;
+  if (typeof File !== "undefined" && value instanceof File) return false;
+  if (typeof Blob !== "undefined" && value instanceof Blob) return false;
+  if (value instanceof ArrayBuffer) return false;
+  if (ArrayBuffer.isView && ArrayBuffer.isView(value)) return false;
+  if (typeof Response !== "undefined" && value instanceof Response) return false;
+  if (typeof Request !== "undefined" && value instanceof Request) return false;
+  if (typeof FormData !== "undefined" && value instanceof FormData) return false;
+  if (typeof URLSearchParams !== "undefined" && value instanceof URLSearchParams) return false;
+
+  const tag = Object.prototype.toString.call(value);
+  return tag === "[object Object]" || tag === "[object Array]";
+}
+
+function getHoneypotKv(env) {
+  return env?.OPS_BANLIST_KV || env?.HONEYPOT_KV || env?.OPS_NONCE_KV || null;
+}
+
+function getHoneypotBlockTtl(env) {
+  const raw = env?.HONEYPOT_BLOCK_TTL;
+  const num = Number(raw);
+  if (!Number.isFinite(num) || num <= 0) return HONEYPOT_BLOCK_TTL_SECONDS;
+  return Math.max(300, Math.min(604800, Math.floor(num))); // clamp between 5 min and 7 days
+}
+
+function getClientIp(request) {
+  const headers = request.headers;
+  const direct = headers.get("cf-connecting-ip");
+  if (direct) return direct.trim();
+
+  const forwarded = headers.get("x-forwarded-for");
+  if (forwarded) {
+    const first = forwarded.split(",").map(p => p.trim()).find(Boolean);
+    if (first) return first;
+  }
+
+  const realIp = headers.get("x-real-ip");
+  if (realIp) return realIp.trim();
+
+  return null;
+}
+
+/* --------------------------- Turnstile validation ------------------------ */
+
+function extractTurnstileToken(source) {
+  const keys = [
+    "cf-turnstile-response",
+    "turnstile_response",
+    "turnstile-token",
+    "turnstile_token",
+    "turnstileResponse",
+    "turnstileToken",
+    "turnstile"
+  ];
+
+  if (!source) return null;
+
+  if (typeof FormData !== "undefined" && source instanceof FormData) {
+    for (const key of keys) {
+      const value = source.get(key);
+      if (typeof value === "string" && value.trim()) return value.trim();
+    }
+    return null;
+  }
+
+  if (typeof source === "object") {
+    for (const key of keys) {
+      const value = source[key];
+      if (typeof value === "string" && value.trim()) return value.trim();
+    }
+
+    if (source.metadata && typeof source.metadata === "object") {
+      return extractTurnstileToken(source.metadata);
+    }
+  }
+
+  return null;
+}
+
+async function enforceTurnstile(token, request, env) {
+  const secret = (env?.TURNSTILE_SECRET || "").trim();
+  if (!secret) return null;
+
+  let resolved = typeof token === "string" ? token.trim() : "";
+  if (!resolved) {
+    const headerToken = request.headers.get("cf-turnstile-response") || request.headers.get("x-turnstile-token");
+    if (headerToken) resolved = headerToken.trim();
+  }
+
+  if (!resolved) {
+    return json({ error: "turnstile_required" }, 403, {
+      "cache-control": "no-store",
+      "x-turnstile": "missing"
+    });
+  }
+
+  const params = new URLSearchParams();
+  params.set("secret", secret);
+  params.set("response", resolved);
+  const ip = getClientIp(request);
+  if (ip) params.set("remoteip", ip);
+
+  let result;
+  try {
+    const verify = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
+      method: "POST",
+      body: params,
+      headers: { "content-type": "application/x-www-form-urlencoded" }
+    });
+
+    if (!verify.ok) {
+      return json({ error: "turnstile_unreachable" }, 502, {
+        "cache-control": "no-store",
+        "x-turnstile": String(verify.status)
+      });
+    }
+
+    result = await verify.json();
+  } catch (err) {
+    return json({ error: "turnstile_error" }, 500, {
+      "cache-control": "no-store",
+      "x-turnstile": "exception"
+    });
+  }
+
+  if (!result?.success) {
+    const codes = Array.isArray(result?.["error-codes"]) ? result["error-codes"].join(",") : "failed";
+    return json({ error: "turnstile_failed", code: codes }, 403, {
+      "cache-control": "no-store",
+      "x-turnstile": codes || "failed"
+    });
+  }
+
+  return null;
 }
