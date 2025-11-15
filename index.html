@@ -1,50 +1,21 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1.0" />
 <title>Chattia</title>
-<meta name="integrity-token" content="">
-<!-- **HERE GOES THE RUNTIME INTEGRITY TOKEN (INJECT VIA BUILD/DEPLOY PIPELINE)** -->
-<!-- **HERE GOES INTEGRITY GATEWAY** https://withered-mouse-9aee.grabem-holdem-nuts-right.workers.dev -->
-<!-- OPS CYSEC CORE | CORS • CSP • CISA • NIST • PCI DSS • SHA-384 • SHA-512 SAFEGUARDS -->
 
-<!-- Patched FontAwesome (CSP + SRI + CORS Safe) -->
 <link rel="stylesheet"
   href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"
   integrity="sha512-RXf+QSDCUqpphKAa+WAc3XQ8fE5H1aO/8e2wY+8Q1n8yVwDh1RZTf1TDN8E+u1n7eU5KyY7X2Qo+hqeZZn+UAQ=="
-  data-shared-key="koSTJ_Bhg8aX9lSpSiFi2NwubonelIY_7sGTFrZqa4scqf--UTOnaKSri_UOjJbdckcHnEUMI0U2LHWYnd0De8"
   crossorigin="anonymous" referrerpolicy="no-referrer" />
 
 <style>
-/* ---------- COLOR SYSTEM ---------- */
-:root{
-  --clr-primary:#00c4ff;
-  --clr-accent :#ff3bdb;
-  --clr-accent-dark:#e000be;
-  --clr-bg  :#ffffff;
-  --clr-bg-dark:#121212;
-  --clr-tx  :#333333;
-  --clr-tx-dark:#f0f0f0;
-}
-body{margin:0;display:flex;align-items:center;justify-content:center;height:100vh;
-      font-family:'Segoe UI',Arial,sans-serif;background:var(--clr-bg);color:var(--clr-tx);
-      transition:background .3s,color .3s}
+:root{ --clr-primary:#00c4ff; --clr-accent:#ff3bdb; --clr-bg:#ffffff; --clr-bg-dark:#121212; --clr-tx:#333; --clr-tx-dark:#f0f0f0; }
+body{margin:0;display:flex;align-items:center;justify-content:center;height:100vh;font-family:system-ui,Segoe UI,Arial,sans-serif;background:var(--clr-bg);color:var(--clr-tx);transition:background .3s,color .3s}
 body.dark{--clr-bg:var(--clr-bg-dark);--clr-tx:var(--clr-tx-dark)}
-
-/* ---------- CHATBOT ---------- */
-#chatbot-container{position:fixed;width:300px;height:540px;background:#251541;border:2px solid var(--clr-accent);
-  border-radius:18px;box-shadow:0 8px 32px #0006;display:flex;flex-direction:column;overflow:hidden;
-  left:50%;top:50%;transform:translate(-50%,-50%);transition:box-shadow .2s ease;will-change:transform,left,top}
-#chatbot-container.dragging{box-shadow:0 12px 36px rgba(0,0,0,.55)}
-#chatbot-header{display:flex;justify-content:space-between;align-items:center;gap:.5rem;
-  background:linear-gradient(135deg,var(--clr-primary) 0%,var(--clr-accent) 100%);
-  color:#fff;font-weight:600;font-size:1.1rem;padding:.75rem 1rem;cursor:grab;user-select:none;
-  touch-action:none}
-#chatbot-container.dragging #chatbot-header{cursor:grabbing}
-#chatbot-header:focus-visible{outline:2px solid var(--clr-primary);outline-offset:4px}
-#chatbot-header .ctrl{cursor:pointer;font-size:.75rem;font-weight:500;user-select:none;opacity:.85}
-#chatbot-header .ctrl:hover{opacity:1}
+#chatbot-container{position:fixed;width:300px;height:540px;background:#251541;border:2px solid var(--clr-accent);border-radius:18px;box-shadow:0 8px 32px #0006;display:flex;flex-direction:column;overflow:hidden;left:50%;top:50%;transform:translate(-50%,-50%);transition:box-shadow .2s ease}
+#chatbot-header{display:flex;justify-content:space-between;align-items:center;gap:.5rem;background:linear-gradient(135deg,var(--clr-primary) 0%,var(--clr-accent) 100%);color:#fff;font-weight:600;font-size:1.1rem;padding:.75rem 1rem}
 #chat-log{flex:1;overflow-y:auto;padding:1rem;background:#1b0e2d;color:#eee;font-size:.94rem}
 .chat-msg{margin:.5rem 0;max-width:90%}
 .user{margin-left:auto;background:var(--clr-primary);color:#000;padding:.5rem .7rem;border-radius:14px 14px 0 14px}
@@ -52,681 +23,137 @@ body.dark{--clr-bg:var(--clr-bg-dark);--clr-tx:var(--clr-tx-dark)}
 #chatbot-form-container{background:#220f3a;border-top:1px solid var(--clr-accent);padding:.55rem .7rem}
 #chatbot-input-row{display:flex;gap:.6rem}
 #chatbot-input{flex:1;background:transparent;border:none;color:#fff;font-size:.95rem;padding:.55rem .6rem}
-#chatbot-send{display:flex;align-items:center;justify-content:center;gap:6px;background:var(--clr-accent);border:none;color:#fff;
-  font-weight:600;padding:.5rem .9rem;border-radius:8px;cursor:pointer;transition:.3s;box-shadow:0 4px 12px rgba(0,0,0,.25)}
-#chatbot-send i{transition:transform .3s;font-size:1rem}
-#chatbot-send:hover i{transform:rotate(-45deg)}
+#chatbot-send{display:flex;align-items:center;justify-content:center;gap:6px;background:var(--clr-accent);border:none;color:#fff;font-weight:600;padding:.5rem .9rem;border-radius:8px;cursor:pointer;transition:.3s;box-shadow:0 4px 12px rgba(0,0,0,.25)}
 #chatbot-send:disabled{background:rgba(255,59,219,.35);color:rgba(255,255,255,.75);cursor:not-allowed;box-shadow:none}
-#chatbot-send:focus-visible{outline:2px solid var(--clr-primary);outline-offset:2px}
-.turnstile-slot{margin-bottom:.35rem}
-.honeypot{position:absolute;left:-10000px;top:auto;width:1px;height:1px;overflow:hidden}
+.turnstile-slot{height:0;overflow:hidden} /* hidden but active */
 @media(max-width:480px){#chatbot-container{height:75vh;width:90%}}
 </style>
 </head>
 <body>
-
-<!-- ---------- CHATBOT HTML ---------- -->
 <div id="chatbot-container" role="dialog" aria-modal="true">
-  <div id="chatbot-header" tabindex="0" aria-grabbed="false" aria-label="Chattia chatbot window. Drag or use arrow keys to move.">
-    <span id="title" data-en="Chattia" data-es="Chattia">Chattia</span>
-
-    <!-- tiny controls -->
-    <div>
-      <span id="langCtrl" class="ctrl">ES</span>
-      &nbsp;|&nbsp;
-      <span id="themeCtrl" class="ctrl">Dark</span>
-    </div>
+  <div id="chatbot-header">
+    <span id="title">Chattia</span>
+    <div><span id="langCtrl" class="ctrl">ES</span>&nbsp;|&nbsp;<span id="themeCtrl" class="ctrl">Dark</span></div>
   </div>
-
   <div id="chat-log" aria-live="polite"></div>
-
   <div id="chatbot-form-container">
     <form id="chatbot-input-row" autocomplete="off">
       <div id="turnstile-slot" class="turnstile-slot" aria-hidden="true"></div>
       <input id="turnstile-token" type="hidden" name="cf-turnstile-response" value="" data-require="true">
-      <label class="honeypot" for="chatbot-company">Company</label>
-      <input id="chatbot-company" class="honeypot" type="text" name="company" tabindex="-1" autocomplete="off" aria-hidden="true">
-      <input id="chatbot-input" type="text" placeholder="Type your message... [Enter for input]" required maxlength="256"
-             data-en-ph="Type your message... [Enter for input]" data-es-ph="Escriba su mensaje... [Intro para enviar]">
-      <button id="chatbot-send" type="submit" disabled aria-label="Send">
-        <i class="fa fa-arrow-right" aria-hidden="true"></i>
-      </button>
+      <input id="chatbot-input" type="text" placeholder="Type your message… [Enter]" required maxlength="256">
+      <button id="chatbot-send" type="submit" disabled aria-label="Send"><i class="fa fa-arrow-right"></i></button>
     </form>
   </div>
 </div>
 
-<!-- ---------- SPEECH-TO-TEXT CONTROLS ---------- -->
-<div id="stt-controls" style="padding:.6rem;background:#1b0e2d;color:#ddd;border-top:1px solid #4a2a7a;margin-top:.5rem">
-  <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
-    <input id="stt-file" type="file" accept="audio/*">
-    <label>Lang
-      <select id="stt-lang">
-        <option value="en" selected>en</option>
-        <option value="es">es</option>
-      </select>
-    </label>
-    <label>Prefer
-      <select id="stt-prefer">
-        <option value="">auto</option>
-        <option value="tiny">tiny</option>
-        <option value="base">base</option>
-        <option value="turbo">turbo</option>
-        <option value="vendor">vendor</option>
-      </select>
-    </label>
-    <button id="stt-send"  type="button">Transcribe file</button>
-    <button id="mic-btn"   type="button">🎙 Start</button>
-  </div>
-  <pre id="stt-out" style="margin:.5rem 0 0;white-space:pre-wrap"></pre>
-</div>
-
-<!-- ---------- CHATBOT LOGIC ---------- -->
 <script>
-const qs=s=>document.querySelector(s),
-      qsa=s=>[...document.querySelectorAll(s)];
-
-const state={
-  conversation:[],
-  isSending:false
-};
-
-const integrityMeta = document.querySelector('meta[name="integrity-token"]');
-const INTEGRITY_HEADER = 'X-Integrity';
-const INTEGRITY_VALUE = integrityMeta?.content?.trim() || 'https://chattiavato-a11y.github.io';
-const INTEGRITY_GATEWAY = 'https://withered-mouse-9aee.grabem-holdem-nuts-right.workers.dev';
-// **HERE GOES INTEGRITY HEADER VALUE (MUST MATCH WORKER POLICY)**
-// **HERE GOES PROTECTED INTEGRITY GATEWAY URL** (OPS CYSEC CORE COMPLIANT)
-const INTEGRITY_PROTOCOLS = 'CORS,CSP,OPS-CySec-Core,CISA,NIST,PCI-DSS,SHA-384,SHA-512';
+const API_BASE   = 'https://ops-chattia-api.grabem-holdem-nuts-right.workers.dev';
+const AUTH_URL   = 'https://withered-mouse-9aee.grabem-holdem-nuts-right.workers.dev/auth/issue';
+const INTEGRITY_VALUE    = 'https://chattiavato-a11y.github.io';
+const INTEGRITY_GATEWAY  = 'https://withered-mouse-9aee.grabem-holdem-nuts-right.workers.dev';
+const INTEGRITY_PROTOCOLS= 'CORS,CSP,OPS-CySec-Core,CISA,NIST,PCI-DSS,SHA-384,SHA-512';
 const sharedIntegrityHeaders = Object.freeze({
-  [INTEGRITY_HEADER]: INTEGRITY_VALUE,
+  'X-Integrity': INTEGRITY_VALUE,
   'X-Integrity-Gateway': INTEGRITY_GATEWAY,
   'X-Integrity-Protocols': INTEGRITY_PROTOCOLS
 });
+const TURNSTILE_SITE_KEY = '0x4AAAAAACBDyXYbdQg180H4';
 
-/* ===== Integrity-config for UI (must match Worker secrets) ===== */
-const API_BASE = 'https://ops-chattia-api.grabem-holdem-nuts-right.workers.dev';
-const CHAT_PATH = '/api/chat';
-const STT_PATH = '/api/stt';
-const AUTH_URL = `${API_BASE}/auth/issue`;  // **HERE GOES SIGNATURE MINTING ROUTE**
+const qs = s => document.querySelector(s);
+const log = qs('#chat-log'), form = qs('#chatbot-input-row'), input = qs('#chatbot-input'), send = qs('#chatbot-send');
+const turnstileSlot = qs('#turnstile-slot'), turnstileToken = qs('#turnstile-token');
+const state = { conversation:[], isSending:false };
+const session = { terminated:false };
 
-/* ===== Integrity helpers (browser) ===== */
-function hexNonce32(){
-  const u8 = crypto.getRandomValues(new Uint8Array(16));
-  return [...u8].map(b => b.toString(16).padStart(2,'0')).join('');
-}
+function addMsg(t,c){const d=document.createElement('div');d.className='chat-msg '+c;d.textContent=t;log.appendChild(d);log.scrollTop=log.scrollHeight;return d;}
+function updateSend(){ const ok = !!input.value.trim() && !state.isSending && (!turnstileToken || turnstileToken.dataset.require!=='true' || !!turnstileToken.value.trim()); send.disabled = !ok || session.terminated; }
 
-async function sha256Hex(input){
-  const enc = typeof input === 'string' ? new TextEncoder().encode(input) : input;
-  const view = enc instanceof Uint8Array ? enc : new Uint8Array(enc);
-  const digest = await crypto.subtle.digest('SHA-256', view);
-  return [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2,'0')).join('');
-}
+function hexNonce32(){ const u8 = crypto.getRandomValues(new Uint8Array(16)); return [...u8].map(b=>b.toString(16).padStart(2,'0')).join(''); }
+async function sha256Hex(input){ const enc = typeof input==='string'? new TextEncoder().encode(input): input; const view = enc instanceof Uint8Array? enc: new Uint8Array(enc); const d = await crypto.subtle.digest('SHA-256', view); return [...new Uint8Array(d)].map(b=>b.toString(16).padStart(2,'0')).join(''); }
 
 async function mintDetachedSignature(path, method, bodySha){
   const ts = Math.floor(Date.now()/1000);
   const nonce = hexNonce32();
-  const payload = { ts, nonce, method, path, body_sha256: bodySha };
-
-  const sigRes = await fetch(AUTH_URL, {
-    method: 'POST',
-    headers: {
-      ...sharedIntegrityHeaders,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify(payload)
+  const r = await fetch(AUTH_URL, {
+    method:'POST',
+    headers:{ ...sharedIntegrityHeaders, 'Content-Type':'application/json' },
+    body: JSON.stringify({ ts, nonce, method, path, body_sha256: bodySha })
   });
-
-  if (!sigRes.ok) {
-    const text = await sigRes.text().catch(() => '');
-    throw new Error(`auth_issue_failed: ${sigRes.status} ${text}`);
-  }
-
-  const { signature } = await sigRes.json();
-  if (!signature) throw new Error('signature_missing');
-
-  return { signature, ts: String(ts), nonce };
+  if(!r.ok) throw new Error('auth_issue_failed:'+r.status);
+  const j = await r.json();
+  if(!j.signature) throw new Error('signature_missing');
+  return { signature:j.signature, ts:String(ts), nonce };
 }
 
 async function signedPost(path, body){
   const method = 'POST';
-  const bodyJson = JSON.stringify(body);
-  const bodySha = await sha256Hex(bodyJson);
+  const payload = JSON.stringify(body);
+  const bodySha = await sha256Hex(payload);
   const { signature, ts, nonce } = await mintDetachedSignature(path, method, bodySha);
-
-  return fetch(`${API_BASE}${path}`, {
+  return fetch(API_BASE + path, {
     method,
-    headers: {
-      ...sharedIntegrityHeaders,
-      'Content-Type': 'application/json',
-      'X-Request-Signature': signature,
-      'X-Request-Timestamp': ts,
-      'X-Request-Nonce': nonce
-    },
-    body: bodyJson
+    headers: { ...sharedIntegrityHeaders, 'Content-Type':'application/json', 'X-Request-Signature':signature, 'X-Request-Timestamp':ts, 'X-Request-Nonce':nonce },
+    body: payload
   });
 }
 
-async function signedFormPost(path, formData){
-  const method = 'POST';
-  const digestProbe = new Request('https://example.invalid', { method, body: formData });
-  const bodyBuffer = await digestProbe.arrayBuffer();
-  const contentType = digestProbe.headers.get('content-type') || 'application/octet-stream';
-  const bodySha = await sha256Hex(bodyBuffer);
-  const { signature, ts, nonce } = await mintDetachedSignature(path, method, bodySha);
-
-  return fetch(`${API_BASE}${path}`, {
-    method,
-    headers: {
-      ...sharedIntegrityHeaders,
-      'Content-Type': contentType,
-      'X-Request-Signature': signature,
-      'X-Request-Timestamp': ts,
-      'X-Request-Nonce': nonce
-    },
-    body: bodyBuffer
-  });
-}
-
-/* === Language toggle === */
-const langCtrl   = qs('#langCtrl'),
-      transNodes = qsa('[data-en]'),
-      phNodes    = qsa('[data-en-ph]');
-
-langCtrl.onclick = () => {
-  const toES = langCtrl.textContent === 'ES';      // going EN→ES ?
-  document.documentElement.lang = toES ? 'es' : 'en';
-  langCtrl.textContent = toES ? 'EN' : 'ES';
-
-  // text nodes
-  transNodes.forEach(node => node.textContent = toES ? node.dataset.es : node.dataset.en);
-
-  // placeholders
-  phNodes.forEach(node => node.placeholder  = toES ? node.dataset.esPh : node.dataset.enPh);
-};
-
-/* === Theme toggle === */
-const themeCtrl = qs('#themeCtrl');
-themeCtrl.onclick = () => {
-  const dark = themeCtrl.textContent === 'Dark';
-  document.body.classList.toggle('dark', dark);
-  themeCtrl.textContent = dark ? 'Light' : 'Dark';
-};
-
-/* === Chatbot core === */
-const container = qs('#chatbot-container'),
-      header = qs('#chatbot-header'),
-      log   = qs('#chat-log'),
-      form  = qs('#chatbot-input-row'),
-      input = qs('#chatbot-input'),
-      send  = qs('#chatbot-send'),
-      honeypot = qs('#chatbot-company'),
-      turnstileSlot = qs('#turnstile-slot'),
-      turnstileToken = qs('#turnstile-token');
-
-const TURNSTILE_SITE_KEY = '0x4AAAAAACBDyXYbdQg180H4';
-
-const micBtn = qs('#mic-btn');
-const sttStatus = qs('#stt-status');
-
-const isTurnstileRequired = () => Boolean(turnstileToken && turnstileToken.dataset.require === 'true');
-
-let turnstileWidgetId = null;
-
-const sessionGuard = {
-  warnings:0,
-  sessionTerminated:false,
-  inactivityTimer:null
-};
-
-const WARNING_MESSAGE = 'Apologies, but I cannot execute that request, do you have any questions about our website?';
-const TERMINATE_MESSAGE = 'Apologies, but I must not continue with this chat and I must end this session.';
-const TIMEOUT_MESSAGE = 'Thank you for visiting us, we look forward to you visiting us once more, Enjoy your day!';
-
-function disableInputs(){
-  input.disabled = true;
-  send.disabled = true;
-  micBtn?.setAttribute('disabled','');
-}
-
-function resetInactivityTimer(){
-  if(sessionGuard.sessionTerminated) return;
-  if(sessionGuard.inactivityTimer) clearTimeout(sessionGuard.inactivityTimer);
-  sessionGuard.inactivityTimer = setTimeout(()=>{
-    terminateSession(TIMEOUT_MESSAGE,{ clearLog:true, clearConversation:true, status:'Session closed after inactivity.' });
-  },60000);
-}
-
-function terminateSession(message,{clearLog=false, clearConversation=false, status='Session closed.'}={}){
-  if(sessionGuard.sessionTerminated) return;
-  sessionGuard.sessionTerminated = true;
-  if(sessionGuard.inactivityTimer){
-    clearTimeout(sessionGuard.inactivityTimer);
-    sessionGuard.inactivityTimer = null;
-  }
-  if(clearConversation) state.conversation = [];
-  if(clearLog) log.innerHTML = '';
-  disableInputs();
-  state.isSending = false;
-  forceStopRecording();
-  updateSendState();
-  if(sttStatus) sttStatus.textContent = status;
-  addMsg(message,'bot');
-}
-
-function updateSendState(){
-  const hasText = Boolean(input.value.trim());
-  const botSuspect = honeypot && honeypot.value.trim().length>0;
-  const turnstileReady = !isTurnstileRequired() || (turnstileToken && turnstileToken.value.trim().length>0);
-  send.disabled = sessionGuard.sessionTerminated || !hasText || state.isSending || botSuspect || !turnstileReady;
-}
-
-input.addEventListener('input', updateSendState);
-honeypot && honeypot.addEventListener('input', updateSendState);
-
-function addMsg(txt,cls){
-  const div = document.createElement('div');
-  div.className = 'chat-msg '+cls;
-  div.textContent = txt;
-  log.appendChild(div);
-  log.scrollTop = log.scrollHeight;
-  resetInactivityTimer();
-  return div;
-}
-
-const MALICIOUS_PATTERNS = [
-  /<[^>]*>/i,
-  /script/i,
-  /malicious/i,
-  /attack/i,
-  /prompt/i,
-  /ignore/i,
-  /hack/i,
-  /drop\s+table/i
-];
-
-const WEBSITE_KEYWORDS = [
-  'website','site','chattia','product','service','support','order','account','pricing','contact','help'
-];
-
-function sanitizeInput(text=''){
-  return text.replace(/[<>]/g,'').replace(/\s+/g,' ').trim();
-}
-
-function violatesPolicy(text){
-  const lower = text.toLowerCase();
-  const looksMalicious = MALICIOUS_PATTERNS.some(rx => rx.test(lower));
-  const onTopic = WEBSITE_KEYWORDS.some(word => lower.includes(word));
-  return looksMalicious || !onTopic;
-}
-
-function enforcePolicy(){
-  sessionGuard.warnings += 1;
-  if(sessionGuard.warnings >= 2){
-    terminateSession(TERMINATE_MESSAGE,{ status:'Session closed for security.' });
-    return;
-  }
-  addMsg(WARNING_MESSAGE,'bot');
-  if(sttStatus) sttStatus.textContent = 'Awaiting an on-topic website question.';
-}
-
-async function sendToChatbot(locale, origin){
-  state.isSending = true;
-  updateSendState();
-
-  const typingEl = addMsg('…','bot');
-  typingEl.setAttribute('aria-live','assertive');
-
-  try{
-    const payload = {
-      messages: state.conversation,
-      metadata: { channel:'chattia-web', locale }
-    };
-
-    const turnstileValue = turnstileToken?.value.trim();
-    if(turnstileValue){
-      payload['cf-turnstile-response'] = turnstileValue;
-      payload.metadata.turnstile_required = true;
-    }
-
-    const r = await signedPost(CHAT_PATH, payload);
-
-    if(!r.ok) throw new Error(`chat_failed:${r.status}`);
-    const d = await r.json();
-    const reply = (d.reply || 'No reply.').trim();
-    typingEl.textContent = reply;
-    state.conversation.push({role:'assistant',content:reply});
-  }catch(err){
-    console.error(err);
-    typingEl.textContent = 'Error: Can’t reach Chattia.';
-  }finally{
-    state.isSending = false;
-    window.chattiaTurnstile.clear(true);
-    window.chattiaTurnstile.resetWidget();
-    updateSendState();
-  }
-}
-
-function processUserMessage(rawText, origin){
-  if(sessionGuard.sessionTerminated) return;
-  const sanitized = sanitizeInput(rawText);
-  if(!sanitized) return;
-
-  addMsg(sanitized,'user');
-
-  if(violatesPolicy(sanitized)){
-    enforcePolicy();
-    input.value='';
-    updateSendState();
-    return;
-  }
-
-  const locale = document.documentElement.lang || 'en';
-  state.conversation.push({role:'user',content:sanitized});
-  input.value='';
-  updateSendState();
-  sendToChatbot(locale, origin);
-}
-
-form.addEventListener('submit', e => {
+form.addEventListener('submit', async (e)=>{
   e.preventDefault();
-  if(sessionGuard.sessionTerminated) return;
-  if(honeypot && honeypot.value.trim().length>0) return;
-  if(isTurnstileRequired() && turnstileToken && !turnstileToken.value.trim()) return;
-
+  if(session.terminated) return;
   const msg = input.value.trim();
   if(!msg) return;
-  processUserMessage(msg,'text');
-});
 
-updateSendState();
+  state.conversation.push({ role:'user', content: msg });
+  addMsg(msg,'user');
+  input.value=''; updateSend();
 
-/* === Draggable window === */
-const dragState = {
-  active:false,
-  offsetX:0,
-  offsetY:0,
-  position:null,
-  userInitiated:false
-};
+  state.isSending = true; updateSend();
+  const thinking = addMsg('…','bot');
 
-const VIEWPORT_MARGIN = 16;
+  try{
+    const payload = { messages: state.conversation, metadata:{ channel:'chattia-web', locale: document.documentElement.lang || 'en' } };
+    const turnToken = turnstileToken?.value?.trim(); if (turnToken) payload['cf-turnstile-response'] = turnToken;
 
-function clampPosition(x,y){
-  const width = container.offsetWidth;
-  const height = container.offsetHeight;
-  const maxX = Math.max(VIEWPORT_MARGIN, window.innerWidth - width - VIEWPORT_MARGIN);
-  const maxY = Math.max(VIEWPORT_MARGIN, window.innerHeight - height - VIEWPORT_MARGIN);
-  const clampedX = Math.min(Math.max(x, VIEWPORT_MARGIN), maxX);
-  const clampedY = Math.min(Math.max(y, VIEWPORT_MARGIN), maxY);
-  return {x:clampedX, y:clampedY};
-}
+    const r = await signedPost('/api/chat', payload);
+    const j = await r.json();
+    const reply = (j.reply || 'No reply.').trim();
+    thinking.textContent = reply;
+    state.conversation.push({ role:'assistant', content: reply });
 
-function applyPosition(x,y){
-  const {x:clampedX, y:clampedY} = clampPosition(x,y);
-  container.style.transform = 'none';
-  container.style.left = `${clampedX}px`;
-  container.style.top = `${clampedY}px`;
-  dragState.position = {x:clampedX, y:clampedY};
-}
-
-function centerContainer(){
-  const width = container.offsetWidth;
-  const height = container.offsetHeight;
-  const centeredX = (window.innerWidth - width) / 2;
-  const centeredY = (window.innerHeight - height) / 2;
-  applyPosition(centeredX, centeredY);
-  dragState.userInitiated = false;
-}
-
-function startDrag(event){
-  if(event.button !== undefined && event.button !== 0) return;
-  if(event.target.closest('.ctrl')) return;
-  dragState.active = true;
-  const rect = container.getBoundingClientRect();
-  dragState.offsetX = event.clientX - rect.left;
-  dragState.offsetY = event.clientY - rect.top;
-  dragState.userInitiated = true;
-  container.classList.add('dragging');
-  header.setPointerCapture?.(event.pointerId);
-  header.setAttribute('aria-grabbed','true');
-  event.preventDefault();
-}
-
-function onDrag(event){
-  if(!dragState.active) return;
-  const x = event.clientX - dragState.offsetX;
-  const y = event.clientY - dragState.offsetY;
-  applyPosition(x, y);
-}
-
-function endDrag(event){
-  if(!dragState.active) return;
-  dragState.active = false;
-  container.classList.remove('dragging');
-  header.releasePointerCapture?.(event.pointerId);
-  header.setAttribute('aria-grabbed','false');
-}
-
-function maintainBounds(){
-  if(!dragState.position){
-    centerContainer();
-    return;
-  }
-  applyPosition(dragState.position.x, dragState.position.y);
-}
-
-header.addEventListener('pointerdown', startDrag);
-window.addEventListener('pointermove', onDrag);
-window.addEventListener('pointerup', endDrag);
-window.addEventListener('pointercancel', endDrag);
-window.addEventListener('resize', () => {
-  if(dragState.userInitiated){
-    maintainBounds();
-  }else{
-    centerContainer();
+  }catch(err){
+    thinking.textContent = 'Error: Can’t reach Chattia.';
+  }finally{
+    state.isSending = false; updateSend();
+    window.chattiaTurnstile?.clear(true);
+    window.chattiaTurnstile?.resetWidget?.();
   }
 });
 
-header.addEventListener('keydown', event => {
-  const step = event.shiftKey ? 32 : 16;
-  let newX = dragState.position?.x ?? container.offsetLeft;
-  let newY = dragState.position?.y ?? container.offsetTop;
-  let moved = false;
-  switch(event.key){
-    case 'ArrowUp':
-      newY -= step;
-      moved = true;
-      break;
-    case 'ArrowDown':
-      newY += step;
-      moved = true;
-      break;
-    case 'ArrowLeft':
-      newX -= step;
-      moved = true;
-      break;
-    case 'ArrowRight':
-      newX += step;
-      moved = true;
-      break;
-    case 'Home':
-      event.preventDefault();
-      centerContainer();
-      dragState.userInitiated = false;
-      return;
-    default:
-      break;
-  }
-  if(moved){
-    event.preventDefault();
-    applyPosition(newX, newY);
-    dragState.userInitiated = true;
-  }
-});
+input.addEventListener('input', updateSend);
 
-centerContainer();
-
-window.chattiaTurnstile = {
-  setToken(token=''){
-    if(!turnstileToken) return;
-    turnstileToken.value = token;
-    if(token) turnstileToken.dataset.require = 'false';
-    updateSendState();
-  },
-  clear(requireNew=false){
-    if(!turnstileToken) return;
-    turnstileToken.value = '';
-    const shouldRequire = requireNew && turnstileWidgetId !== null;
-    turnstileToken.dataset.require = shouldRequire ? 'true' : 'false';
-    updateSendState();
-  },
-  require(flag=true){
-    if(!turnstileToken) return;
-    turnstileToken.dataset.require = flag ? 'true' : 'false';
-    updateSendState();
-  },
-  resetWidget(){
-    if(!window.turnstile || turnstileWidgetId === null) return;
-    try{ window.turnstile.reset(turnstileWidgetId); }
-    catch(err){ /* no-op */ }
-  },
-  bind(id){
-    turnstileWidgetId = id;
-  }
-};
-
-function loadTurnstile(){
-  if(!turnstileSlot || !TURNSTILE_SITE_KEY) return;
-  if(document.getElementById('cf-turnstile-script')) return;
-
-  const script = document.createElement('script');
-  script.id = 'cf-turnstile-script';
-  script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
-  script.async = true;
-  script.defer = true;
-  script.onload = () => {
-    if(!window.turnstile) return;
-    window.chattiaTurnstile.require(true);
+(function loadTurnstile(){
+  if(!turnstileSlot || !TURNSTILE_SITE_KEY) { updateSend(); return; }
+  const s = document.createElement('script');
+  s.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+  s.async = true; s.defer = true;
+  s.onload = ()=> {
+    if(!window.turnstile) { updateSend(); return; }
     const id = window.turnstile.render(turnstileSlot, {
-      sitekey: TURNSTILE_SITE_KEY,
-      theme: 'auto',
-      callback(token){
-        window.chattiaTurnstile.setToken(token);
-      },
-      'error-callback': () => {
-        window.chattiaTurnstile.clear(true);
-        setTimeout(() => window.chattiaTurnstile.resetWidget(), 0);
-      },
-      'expired-callback': () => {
-        window.chattiaTurnstile.clear(true);
-        setTimeout(() => window.chattiaTurnstile.resetWidget(), 0);
-      }
+      sitekey: TURNSTILE_SITE_KEY, theme:'auto',
+      callback(token){ turnstileToken.value = token; turnstileToken.dataset.require = 'false'; updateSend(); },
+      'error-callback': ()=>{ turnstileToken.value=''; turnstileToken.dataset.require='true'; updateSend(); },
+      'expired-callback': ()=>{ turnstileToken.value=''; turnstileToken.dataset.require='true'; updateSend(); }
     });
-    window.chattiaTurnstile.bind(id);
+    window.chattiaTurnstile = {
+      setToken(t=''){ turnstileToken.value=t; turnstileToken.dataset.require = t? 'false':'true'; updateSend(); },
+      clear(requireNew=false){ turnstileToken.value=''; turnstileToken.dataset.require = requireNew? 'true':'false'; updateSend(); },
+      resetWidget(){ try{ window.turnstile.reset(id); }catch{} }
+    };
   };
-  script.onerror = () => {
-    window.chattiaTurnstile.require(false);
-  };
+  document.head.appendChild(s);
+})();
 
-  document.head.appendChild(script);
-}
-
-const $ = s => document.querySelector(s);
-const chatInput = document.querySelector('#chatbot-input'); // will auto-fill transcript here
-
-function showResult(resp, data) {
-  const tier = resp.headers.get('x-tier') || '?';
-  const model = resp.headers.get('x-model') || '?';
-  $('#stt-out').textContent = resp.ok
-    ? `tier=${tier}  model=${model}\n\n${data.text || ''}`
-    : JSON.stringify(data, null, 2);
-  if (resp.ok && data.text && chatInput) chatInput.value = data.text; // drop text into chat box
-}
-
-// ---------- A) File picker -> /api/stt ----------
-$('#stt-send')?.addEventListener('click', async () => {
-  const f = $('#stt-file')?.files?.[0];
-  if (!f) { $('#stt-out').textContent = 'Pick an audio file.'; return; }
-  if(isTurnstileRequired() && !(turnstileToken?.value.trim())) {
-    $('#stt-out').textContent = 'Complete the security check first.';
-    return;
-  }
-
-  const form = new FormData();
-  form.append('audio', f);                                  // REQUIRED name
-  form.append('lang', $('#stt-lang').value || 'en');        // optional
-  form.append('prefer', $('#stt-prefer').value || '');      // optional
-
-  const turnstileValue = turnstileToken?.value.trim();
-  if(turnstileValue) form.set('cf-turnstile-response', turnstileValue);
-
-  try {
-    const r = await signedFormPost(STT_PATH, form);
-    const d = await r.json();
-    showResult(r, d);
-  } catch {
-    $('#stt-out').textContent = 'Network error';
-  }
-  window.chattiaTurnstile.clear(true);
-  window.chattiaTurnstile.resetWidget();
-});
-
-// ---------- B) Microphone (record) -> /api/stt ----------
-const mo = { mimeType: 'audio/webm' }; // compact and widely supported
-let media, rec, chunks = [], recording = false;
-
-$('#mic-btn')?.addEventListener('click', async () => {
-  if (!recording) {
-    if(isTurnstileRequired() && !(turnstileToken?.value.trim())) {
-      $('#stt-out').textContent = 'Complete the security check first.';
-      return;
-    }
-    try {
-      chunks = [];
-      media = await navigator.mediaDevices.getUserMedia({ audio: true });
-      rec = new MediaRecorder(media, mo);
-      rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
-      rec.start();
-      recording = true;
-      $('#mic-btn').textContent = '⏹ Stop';
-    } catch {
-      $('#stt-out').textContent = 'Mic permission denied.'; 
-    }
-    return;
-  }
-
-  // Stop & upload
-  rec.stop();
-  media.getTracks().forEach(t => t.stop());
-  recording = false;
-  $('#mic-btn').textContent = '🎙 Start';
-
-  const blob = new Blob(chunks, { type: mo.mimeType || 'audio/webm' });
-  if (blob.size > 8_000_000) { // matches Worker default MAX_AUDIO_BYTES (8 MB)
-    $('#stt-out').textContent = 'Audio too large; record a shorter clip.'; 
-    return;
-  }
-
-  const form = new FormData();
-  form.append('audio', blob, 'clip.webm');
-  form.append('lang', $('#stt-lang').value || 'en');
-  form.append('prefer', $('#stt-prefer').value || '');
-
-  const turnstileValue = turnstileToken?.value.trim();
-  if(turnstileValue) form.set('cf-turnstile-response', turnstileValue);
-
-  try {
-    const r = await signedFormPost(STT_PATH, form);
-    const d = await r.json();
-    showResult(r, d);
-  } catch {
-    $('#stt-out').textContent = 'Network error';
-  }
-  window.chattiaTurnstile.clear(true);
-  window.chattiaTurnstile.resetWidget();
-});
-
-loadTurnstile();
+document.addEventListener('DOMContentLoaded', updateSend);
 </script>
 </body>
 </html>
