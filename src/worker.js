@@ -1,4 +1,5 @@
 // src/worker.js — Integrity Gateway (Auth → Chat + STT) with escalation
+import { SERVICE_DIRECTORY, SERVICE_DIRECTORY_PROMPT } from "../services/directory.js";
 
 const MODEL_ID = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
 const DEFAULT_INTEGRITY_GATEWAY = "https://withered-mouse-9aee.grabem-holdem-nuts-right.workers.dev";
@@ -12,30 +13,7 @@ const DEFAULT_HONEYPOT_FIELDS = [
 const HONEYPOT_BLOCK_TTL_SECONDS = 86400; // 24h
 
 // Minimal built-in site KB (BM25-ish fallback for obvious “website” Qs)
-const WEBSITE_KB = [
-  {
-    id: "ops-hero",
-    lang: "en",
-    title: "OPS Website — Hero",
-    content:
-      "Ops Online Support helps teams keep momentum by handling operations so you can focus on growth.",
-    summaryEn:
-      "Ops Online Support keeps you moving by handling operations so your team can focus on growth.",
-    summaryEs:
-      "Ops Online Support mantiene tu impulso gestionando operaciones para que tu equipo se enfoque en crecer."
-  },
-  {
-    id: "ops-pillars",
-    lang: "en",
-    title: "Service pillars",
-    content:
-      "Service pillars: Business Operations, Contact Center, IT Support, Professionals On-Demand.",
-    summaryEn:
-      "Our pillars: Business Operations, Contact Center, IT Support, and Professionals On-Demand.",
-    summaryEs:
-      "Nuestros pilares: Operaciones de Negocio, Contact Center, Soporte IT y Profesionales On-Demand."
-  }
-];
+const WEBSITE_KB = buildWebsiteKb();
 const STOP_WORDS = {
   en: new Set("a,about,an,and,are,as,at,be,by,for,from,how,in,is,it,of,on,or,our,that,the,their,to,we,what,when".split(",")),
   es: new Set("a,al,como,con,de,del,el,ella,ellas,ellos,en,es,esta,este,las,los,para,por,que,se,son,su,sus,un,una,y".split(","))
@@ -45,7 +23,8 @@ const AVG_DOC_LENGTH = WEBSITE_KB.reduce((s,d)=>s+d.content.split(/\s+/).length,
 const SYSTEM_PROMPT =
   "You are Chattia, an empathetic, security-aware assistant that communicates with clarity and inclusive language. " +
   "Deliver concise, actionable answers aligned with OPS Core CyberSec governance. Provide step-by-step help when useful, " +
-  "call out safety cautions, and respect accessibility and privacy expectations.";
+  "call out safety cautions, respect accessibility and privacy expectations, and tie every insight back to the OPS Remote " +
+  "Professional Network service directory pillars or solutions when relevant.";
 
 const WARNING_MESSAGE   = "Apologies, but I cannot execute that request, do you have any questions about our website?";
 const TERMINATE_MESSAGE = "Apologies, but I must not continue with this chat and I must end this session.";
@@ -183,8 +162,13 @@ async function handleChatRequest(request, env) {
       : m
     );
 
-    if (!sanitized.some(m => m.role === "system")) {
+    const hasSystem = sanitized.some(m => m.role === "system");
+    const hasDirectoryPrompt = sanitized.some(m => m.role === "system" && m.content.includes("OPS Remote Professional Network"));
+    if (!hasSystem) {
       sanitized.unshift({role:"system", content: SYSTEM_PROMPT});
+    }
+    if (!hasDirectoryPrompt) {
+      sanitized.unshift({role:"system", content: SERVICE_DIRECTORY_PROMPT});
     }
 
     // Quick website-KB route first
@@ -448,8 +432,8 @@ function routeWebsiteDefaultFlow(usr){
   const lang = detectLanguage(q);
   const terms = tokenize(q).filter(t=>!STOP_WORDS[lang]?.has(t));
   if (!terms.length) return null;
-  const cands = WEBSITE_KB.filter(d=>d.lang===lang);
-  if (!cands.length) return null;
+  let cands = WEBSITE_KB.filter(d=>d.lang===lang);
+  if (!cands.length) cands = WEBSITE_KB;
 
   let best=null;
   for (const d of cands){
@@ -460,6 +444,127 @@ function routeWebsiteDefaultFlow(usr){
 
   let reply = (lang==="es" ? best.doc.summaryEs : best.doc.summaryEn) || best.doc.content;
   return { type:"kb", reply, docId:best.doc.id, title:best.doc.title, language:lang, score:best.score };
+}
+
+function buildWebsiteKb(){
+  const docs = [
+    {
+      id: "ops-hero",
+      lang: "en",
+      title: "OPS Website — Hero",
+      content:
+        "Ops Online Support helps teams keep momentum by handling operations so you can focus on growth.",
+      summaryEn:
+        "Ops Online Support keeps you moving by handling operations so your team can focus on growth.",
+      summaryEs:
+        "Ops Online Support mantiene tu impulso gestionando operaciones para que tu equipo se enfoque en crecer."
+    },
+    {
+      id: "ops-pillars",
+      lang: "en",
+      title: "Service pillars",
+      content:
+        "Service pillars: Business Operations, Contact Center, IT Support, Professionals On-Demand.",
+      summaryEn:
+        "Our pillars: Business Operations, Contact Center, IT Support, and Professionals On-Demand.",
+      summaryEs:
+        "Nuestros pilares: Operaciones de Negocio, Contact Center, Soporte IT y Profesionales On-Demand."
+    }
+  ];
+
+  docs.push(...buildServiceDirectoryDocs());
+  return docs;
+}
+
+function buildServiceDirectoryDocs(){
+  if (!SERVICE_DIRECTORY) return [];
+  const docs = [];
+  const overview = SERVICE_DIRECTORY.overview;
+  const serviceNames = SERVICE_DIRECTORY.servicePillars?.map(p=>p.name).join(", ") || "";
+  const solutionNames = SERVICE_DIRECTORY.solutions?.map(s=>s.name).join(", ") || "";
+  if (overview){
+    const overviewContent = `${overview.name} focuses on ${overview.focus}. Service pillars include ${serviceNames}. Solutions cover ${solutionNames}. Operational proof points: ${SERVICE_DIRECTORY.proofPoints?.join(", ") || "n/a"}.`;
+    docs.push({
+      id: "ops-directory-overview",
+      lang: "en",
+      title: `${overview.name} overview`,
+      content: overviewContent,
+      summaryEn: "OPS Remote Professional Network unites remote pods for Business Operations, Contact Center, IT Support, and Professionals on demand.",
+      summaryEs: "La Red de Profesionales Remotos OPS reúne pods remotos para Operaciones de Negocio, Contact Center, Soporte TI y especialistas bajo demanda."
+    });
+  }
+
+  for (const pillar of SERVICE_DIRECTORY.servicePillars || []){
+    docs.push({
+      id: `pillar-${slugifyId(pillar.name)}`,
+      lang: "en",
+      title: `${pillar.name} pillar`,
+      content: pillar.summary,
+      summaryEn: pillar.summary,
+      summaryEs: translatePillarSummary(pillar.name, pillar.summary)
+    });
+  }
+
+  for (const solution of SERVICE_DIRECTORY.solutions || []){
+    docs.push({
+      id: `solution-${slugifyId(solution.name)}`,
+      lang: "en",
+      title: `${solution.name} solution`,
+      content: solution.coverage,
+      summaryEn: solution.coverage,
+      summaryEs: translateSolutionSummary(solution.name, solution.coverage)
+    });
+  }
+
+  const talentLines = SERVICE_DIRECTORY.talentNetwork?.applicationHighlights || [];
+  const commitments = SERVICE_DIRECTORY.talentNetwork?.commitments || [];
+  if (talentLines.length){
+    docs.push({
+      id: "talent-network-highlights",
+      lang: "en",
+      title: "Talent network highlights",
+      content: `Applicants emphasize ${talentLines.join("; ")}. Community commitments: ${commitments.join("; ")}.`,
+      summaryEn: "OPS talent applicants share crafts, skills, education, continued learning, and guild interests across Business Operations, Contact Center, IT Support, Professionals, Analytics & Insights.",
+      summaryEs: "Los postulantes a la red OPS comparten oficios, habilidades, estudios, aprendizaje continuo e intereses en Operaciones, Contact Center, Soporte TI, Profesionales y Analítica."
+    });
+  }
+
+  if (SERVICE_DIRECTORY.contactPathways?.length){
+    docs.push({
+      id: "ops-contact-pathways",
+      lang: "en",
+      title: "OPS contact pathways",
+      content: SERVICE_DIRECTORY.contactPathways.join("; "),
+      summaryEn: "Contact OPS via discovery calls, direct consultations, or hiring remote specialists across CX, IT, and operations.",
+      summaryEs: "Contacta a OPS mediante discovery calls, consultas directas o contratación de especialistas remotos en CX, TI y operaciones."
+    });
+  }
+
+  return docs;
+}
+
+function translatePillarSummary(name, fallback){
+  const dict = {
+    "Business Operations": "Operaciones de Negocio: playbooks que preservan la higiene financiera, facturación y tableros ejecutivos.",
+    "Contact Center (Beta)": "Contact Center (Beta): agentes omnicanal con señales de sentimiento y bases de conocimiento actualizadas.",
+    "IT Support (Beta)": "Soporte TI (Beta): pods listos para incidentes con triaje documentado, telemetría integrada y continuidad.",
+    "Professionals": "Profesionales: equipos de insights con analítica predictiva y marcos de retroalimentación orientados al crecimiento."
+  };
+  return dict[name] || fallback;
+}
+
+function translateSolutionSummary(name, fallback){
+  const dict = {
+    "Business Operations": "Cobertura de facturación, cuentas por pagar/cobrar, coordinación de proveedores, soporte administrativo y marketing.",
+    "Contact Center (Beta)": "CX multicanal orientado a relaciones con soporte de resolución rápida y lealtad.",
+    "IT Support (Beta)": "Soporte TI integral con mesa de ayuda, tickets, manejo de incidentes y pistas especializadas.",
+    "Professionals On Demand": "Asistentes y especialistas desplegables para sprints cortos o compromisos prolongados."
+  };
+  return dict[name] || fallback;
+}
+
+function slugifyId(input){
+  return String(input||"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/(^-|-$)/g,"");
 }
 
 async function buildKnowledgeResponse(flow, env){
