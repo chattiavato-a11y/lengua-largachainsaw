@@ -162,14 +162,7 @@ async function handleChatRequest(request, env) {
       : m
     );
 
-    const hasSystem = sanitized.some(m => m.role === "system");
-    const hasDirectoryPrompt = sanitized.some(m => m.role === "system" && m.content.includes("OPS Remote Professional Network"));
-    if (!hasSystem) {
-      sanitized.unshift({role:"system", content: SYSTEM_PROMPT});
-    }
-    if (!hasDirectoryPrompt) {
-      sanitized.unshift({role:"system", content: SERVICE_DIRECTORY_PROMPT});
-    }
+    const preparedMessages = ensureGovernancePrompts(sanitized);
 
     // Quick website-KB route first
     const lastUser = [...sanitized].reverse().find(m => m.role === "user")?.content || "";
@@ -178,7 +171,7 @@ async function handleChatRequest(request, env) {
 
     // Primary model
     let model = selectChatModel(env, metadata);
-    let ai = await env.AI.run(model, { messages: sanitized, max_tokens: getMaxTokens(env), temperature: 0.3, metadata });
+    let ai = await env.AI.run(model, { messages: preparedMessages, max_tokens: getMaxTokens(env), temperature: 0.3, metadata });
 
     let reply =
       (typeof ai === "string" && ai) ||
@@ -191,7 +184,7 @@ async function handleChatRequest(request, env) {
 
     // Escalate on low confidence
     if (conf.level === "low" && !escalated) {
-      const bump = await escalateHighConfidenceChat({ body, sanitizedMessages: sanitized, request, env });
+      const bump = await escalateHighConfidenceChat({ body, sanitizedMessages: preparedMessages, request, env });
       if (bump?.reply) {
         reply = bump.reply;
         trimmed = String(reply).trim();
@@ -444,6 +437,24 @@ function routeWebsiteDefaultFlow(usr){
 
   let reply = (lang==="es" ? best.doc.summaryEs : best.doc.summaryEn) || best.doc.content;
   return { type:"kb", reply, docId:best.doc.id, title:best.doc.title, language:lang, score:best.score };
+}
+
+function ensureGovernancePrompts(messages){
+  const filtered = [];
+  const base = SYSTEM_PROMPT.trim();
+  const directory = SERVICE_DIRECTORY_PROMPT.trim();
+  for (const msg of messages || []){
+    if (msg?.role === "system"){
+      const content = (msg.content||"").trim();
+      if (content === base || content === directory) continue;
+    }
+    filtered.push(msg);
+  }
+  return [
+    {role:"system", content: SERVICE_DIRECTORY_PROMPT},
+    {role:"system", content: SYSTEM_PROMPT},
+    ...filtered
+  ];
 }
 
 function buildWebsiteKb(){
