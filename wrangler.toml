@@ -1,10 +1,72 @@
-# wrangler.toml  (Integrity Gateway) — minimal, no KV IDs or secrets here
+# wrangler.toml — withered-mouse-9aee (Integrity Gateway + Chat/STT + Scan + Memory)
 
-name = "ops-integrity-gateway"
+name = "withered-mouse-9aee"
 main = "src/worker.js"
 compatibility_date = "2025-11-01"
 workers_dev = true
+# If you need Node libs (usually not for this Worker), uncomment:
+# compatibility_flags = ["nodejs_compat"]
 
-# Bindings (KV/secrets/vars) are added via Cloudflare Dashboard only.
-# Capabilities & capacities remain: AI binding, OPS_* KV namespaces, optional WebLLM R2 bucket,
-# integrity vars, and escalation URL are all managed via dashboard bindings for efficiency.
+# Workers AI (bind as `env.AI`)
+[ai]
+binding = "AI"
+
+# -------- Optional routing (leave commented when using *.workers.dev) --------
+# [routes]
+#  - pattern = "withered-mouse-9aee.grabem-holdem-nuts-right.workers.dev/*"
+#    zone_name = "grabem-holdem-nuts-right.workers.dev"
+
+# -------- KV namespaces --------
+[[kv_namespaces]]
+binding = "OPS_NONCE_KV"        # mint/use replay defense
+id = "<KV_ID_NONCE>"
+
+[[kv_namespaces]]
+binding = "OPS_TRANSCRIPTS_KV"  # lightweight transcripts / scan reports
+id = "<KV_ID_TRANSCRIPTS>"
+
+[[kv_namespaces]]
+binding = "OPS_BANLIST_KV"      # honeypot IP blocks
+id = "<KV_ID_BANLIST>"
+
+# -------- R2 bucket (sanitized artifacts from scans) --------
+[[r2_buckets]]
+binding = "OPS_ARTIFACTS_R2"
+bucket_name = "ops-artifacts"   # create in dashboard; adjust if different
+
+# -------- D1 database (training / structured memory) --------
+[[d1_databases]]
+binding = "OPS_TRAINING_DB"
+database_name = "ops_training_db"
+database_id = "<D1_ID_TRAINING>"
+
+# -------- Static assets (optional) --------
+# If you serve a tiny status page or assets, bind Pages/Assets here.
+# [assets]
+# binding = "ASSETS"
+# bucket = "./public"
+
+# -------- Non-sensitive variables (safe to keep in repo) --------
+[vars]
+INTEGRITY_REQUIRED   = "true"
+INTEGRITY_GATEWAY    = "https://withered-mouse-9aee.grabem-holdem-nuts-right.workers.dev"
+INTEGRITY_PROTOCOLS  = "CORS,CSP,OPS-CySec-Core,CISA,NIST,PCI-DSS,SHA-384,SHA-512"
+SIG_TTL_SECONDS      = "300"
+LLM_MAX_TOKENS       = "768"
+ALLOW_WORKERS_DEV    = "true"
+ALLOW_DASH           = "false"
+
+# CHANNELLA integrity (public JWK expected by the Worker for origin check)
+# Keep the PRIVATE key as a Secret (CHANNELLA). This public key is fine in vars.
+CHANNELLA_EXPECTED_PUB = "{ \"crv\": \"P-256\", \"ext\": true, \"key_ops\": [], \"kty\": \"EC\", \"x\": \"LwrIIZR3AcENpAtpQRQ5DtGo5ML7diFfILRgg5DUCdI\", \"y\": \"ALclNxh3f9sSIZ1xBtsCA8f49Te2XFlCg0pysX1x8P0\" }"
+
+# -------- Secrets (set in Dashboard → Worker → Settings → Variables → Secrets) --------
+# SHARED_KEY            (HMAC for detached signatures)
+# ADMIN_TOKEN_INIT      (temporary init token for /admin/db/init)
+# TURNSTILE_SECRET      (for Turnstile verification, if enabled)
+# L7_URL                (https://ops-chattia-api.grabem-holdem-nuts-right.workers.dev/ — escalation target)
+# GITHUB_WEBHOOK_SECRET (if using /repo/github/webhook)
+# GITHUB_TOKEN          (optional: raw file fetch on private repos)
+# CHANNELLA             (private material if you keep an ECDH/ECDSA secret counterpart)
+
+# Tip: You can leave the IDs blank here and bind everything via the Dashboard if you prefer.
