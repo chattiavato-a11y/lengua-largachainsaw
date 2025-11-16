@@ -1,101 +1,110 @@
 [
-  {
-    "id": "greeting",
-    "title": "Greetings and introductions",
-    "prompt": "hello hi hey greetings hola buenas buen dia good morning good afternoon welcome",
-    "answers": {
-      "en": "Hi there! I'm in safeguarded local mode right now, but I can still capture your intent and keep the conversation flowing. How can I help you today?",
-      "es": "¡Hola! Estoy en modo local protegido por ahora, pero puedo seguir la conversación y registrar lo que necesites. ¿En qué puedo ayudarte?"
+    {
+        "id": "greeting",
+        "title": "Greetings and introductions",
+        "prompt": "hello hi hey greetings hola buenas buen dia good morning good afternoon welcome",
+        "answers": {
+            "en": "Hi there! I'm in safeguarded local mode right now, but I can still capture your intent and keep the conversation flowing. How can I help you today?",
+            "es": "\u00a1Hola! Estoy en modo local protegido por ahora, pero puedo seguir la conversaci\u00f3n y registrar lo que necesites. \u00bfEn qu\u00e9 puedo ayudarte?"
+        }
+    },
+    {
+        "id": "status",
+        "title": "Service availability",
+        "prompt": "service status availability outage offline mantenimiento mantenimiento estado",
+        "answers": {
+            "en": "Our primary Workers cluster isn't reachable at the moment, so I'm answering from the local corpus. Your messages stay queued with integrity metadata and will sync when the secure link comes back.",
+            "es": "La plataforma principal en Workers no est\u00e1 disponible por el momento, as\u00ed que respondo desde el corpus local. Tus mensajes quedan en cola con metadatos de integridad y se sincronizar\u00e1n cuando vuelva el enlace seguro."
+        }
+    },
+    {
+        "id": "integrity",
+        "title": "Integrity gateway telemetry",
+        "prompt": "integrity gateway summary ttl signature protocolos health resumen",
+        "answers": {
+            "en": "The integrity gateway keeps signing windows published so the client knows the current signature TTL and allowed origins. If the health summary can't be reached, Chattia lights the banner to show we're in a safeguarded local state until the edge mesh returns.",
+            "es": "La pasarela de integridad mantiene visible la ventana de firmas para que el cliente conozca el TTL vigente y los or\u00edgenes permitidos. Si no se puede consultar el resumen de salud, Chattia activa la alerta indicando que usamos el modo local protegido hasta que regrese la malla perimetral."
+        }
+    },
+    {
+        "id": "security",
+        "title": "Security and compliance",
+        "prompt": "security seguridad compliance cumplimiento pci nist cisa ops cybersec core governance gobernanza",
+        "answers": {
+            "en": "Security is anchored to the OPS CyberSec Core controls that map to NIST CSF, CISA Cyber Essentials, and PCI DSS 4.0. Even in fallback mode every payload is staged with AES-256 encryption until it can be forwarded upstream.",
+            "es": "La seguridad se basa en los controles OPS CyberSec Core alineados con NIST CSF, CISA Cyber Essentials y PCI DSS 4.0. Incluso en modo local cada mensaje se resguarda con cifrado AES-256 hasta poder enviarlo al servicio principal."
+        }
+    },
+    {
+        "id": "ux",
+        "title": "UX and accessibility",
+        "prompt": "ux ui accessibility accesibilidad wcag progressive web app core web vitals experiencia",
+        "answers": {
+            "en": "Chattia follows adaptive UX, WCAG 2.1 AA, and Core Web Vitals monitoring. While offline I can still suggest next steps, log usability feedback, and prep insights for designers once the main pipeline returns.",
+            "es": "Chattia aplica UX adaptativo, WCAG 2.1 AA y seguimiento de Core Web Vitals. Aunque est\u00e9 offline puedo sugerir pr\u00f3ximos pasos, registrar comentarios de usabilidad y preparar insights para el equipo de dise\u00f1o cuando vuelva la conectividad."
+        }
+    },
+    {
+        "id": "payments",
+        "title": "Payments and data protection",
+        "prompt": "payments pagos pci tokens card datos sensibles encryption cifrado",
+        "answers": {
+            "en": "Payment artifacts remain tokenized and never touch the browser in fallback mode. The pipeline keeps PCI DSS requirements 3-11 active with rotating keys, tamper-evident logs, and segregation of cardholder data.",
+            "es": "Los artefactos de pago se tokenizan y nunca pasan por el navegador en modo local. El flujo mantiene activos los requisitos PCI DSS 3-11 con llaves rotativas, bit\u00e1coras con evidencia de manipulaci\u00f3n y segregaci\u00f3n de datos de tarjeta."
+        }
+    },
+    {
+        "id": "privacy",
+        "title": "Privacy and governance",
+        "prompt": "privacy privacidad gdpr ccpa datos personales data retention retencion",
+        "answers": {
+            "en": "Your inputs stay governed by GDPR/CCPA policies. Locally cached snippets auto-expire after the secure transfer succeeds so we don't retain personal data longer than necessary.",
+            "es": "Tus datos siguen las pol\u00edticas GDPR/CCPA. Los fragmentos almacenados localmente se eliminan autom\u00e1ticamente cuando la transferencia segura se completa para no conservar informaci\u00f3n personal m\u00e1s de lo necesario."
+        }
+    },
+    {
+        "id": "observability",
+        "title": "Telemetry and observability",
+        "prompt": "observability telemetry metrics lighthouse core web vitals logging monitoreo",
+        "answers": {
+            "en": "We monitor Lighthouse CI, Core Web Vitals, and anomaly baselines even when offline. I can note any lag or UX regression you see so Site Reliability can replay it once the SIEM connection stabilizes.",
+            "es": "Supervisamos Lighthouse CI, Core Web Vitals y l\u00edneas base de anomal\u00edas incluso estando offline. Puedo registrar cualquier demora o regresi\u00f3n UX que notes para que el equipo de fiabilidad la revise cuando se estabilice la conexi\u00f3n al SIEM."
+        }
+    },
+    {
+        "id": "roadmap",
+        "title": "Roadmap and experimentation",
+        "prompt": "roadmap plan futuro features experimentos tiny llm tiny ml",
+        "answers": {
+            "en": "Upcoming drops include Tiny LLM inference for cost-efficient personalization, plus PWA hardening with background sync. Share any experiments you'd like prioritized and I'll flag them for the product council.",
+            "es": "Los pr\u00f3ximos lanzamientos incluyen inferencia con Tiny LLM para personalizaci\u00f3n eficiente y mejoras PWA con sincronizaci\u00f3n en segundo plano. Comparte los experimentos que quieras priorizar y los marcar\u00e9 para el consejo de producto."
+        }
+    },
+    {
+        "id": "escalate",
+        "title": "Escalation request",
+        "prompt": "escalate escalation soporte support human agente contactar help ayuda",
+        "answers": {
+            "en": "I've logged your escalation request. Drop any context you want forwarded and I'll package it for the human team the moment the primary channel is live again.",
+            "es": "He registrado tu solicitud de escalaci\u00f3n. Comparte el contexto que desees y lo enviar\u00e9 al equipo humano en cuanto el canal principal vuelva a estar disponible."
+        }
+    },
+    {
+        "id": "goodbye",
+        "title": "Closing the session",
+        "prompt": "goodbye thanks thank you bye adios gracias",
+        "answers": {
+            "en": "Thank you for checking in! I'll keep monitoring the secure edge link and sync our transcript automatically once connectivity is restored.",
+            "es": "\u00a1Gracias por visitar Chattia! Seguir\u00e9 monitoreando el enlace seguro y sincronizar\u00e9 nuestra transcripci\u00f3n en cuanto regrese la conectividad."
+        }
+    },
+    {
+        "id": "default",
+        "title": "General fallback",
+        "prompt": "general fallback default cualquier cosa",
+        "answers": {
+            "en": "I'm temporarily offline from the core Chattia brain, but your message is captured with compliance metadata and will be replayed as soon as the connection returns.",
+            "es": "Estoy temporalmente desconectada del n\u00facleo de Chattia, pero tu mensaje queda registrado con metadatos de cumplimiento y se reenviar\u00e1 en cuanto vuelva la conexi\u00f3n."
+        }
     }
-  },
-  {
-    "id": "status",
-    "title": "Service availability",
-    "prompt": "service status availability outage offline mantenimiento mantenimiento estado",
-    "answers": {
-      "en": "Our primary Workers cluster isn't reachable at the moment, so I'm answering from the local corpus. Your messages stay queued with integrity metadata and will sync when the secure link comes back.",
-      "es": "La plataforma principal en Workers no está disponible por el momento, así que respondo desde el corpus local. Tus mensajes quedan en cola con metadatos de integridad y se sincronizarán cuando vuelva el enlace seguro."
-    }
-  },
-  {
-    "id": "security",
-    "title": "Security and compliance",
-    "prompt": "security seguridad compliance cumplimiento pci nist cisa ops cybersec core governance gobernanza",
-    "answers": {
-      "en": "Security is anchored to the OPS CyberSec Core controls that map to NIST CSF, CISA Cyber Essentials, and PCI DSS 4.0. Even in fallback mode every payload is staged with AES-256 encryption until it can be forwarded upstream.",
-      "es": "La seguridad se basa en los controles OPS CyberSec Core alineados con NIST CSF, CISA Cyber Essentials y PCI DSS 4.0. Incluso en modo local cada mensaje se resguarda con cifrado AES-256 hasta poder enviarlo al servicio principal."
-    }
-  },
-  {
-    "id": "ux",
-    "title": "UX and accessibility",
-    "prompt": "ux ui accessibility accesibilidad wcag progressive web app core web vitals experiencia",
-    "answers": {
-      "en": "Chattia follows adaptive UX, WCAG 2.1 AA, and Core Web Vitals monitoring. While offline I can still suggest next steps, log usability feedback, and prep insights for designers once the main pipeline returns.",
-      "es": "Chattia aplica UX adaptativo, WCAG 2.1 AA y seguimiento de Core Web Vitals. Aunque esté offline puedo sugerir próximos pasos, registrar comentarios de usabilidad y preparar insights para el equipo de diseño cuando vuelva la conectividad."
-    }
-  },
-  {
-    "id": "payments",
-    "title": "Payments and data protection",
-    "prompt": "payments pagos pci tokens card datos sensibles encryption cifrado",
-    "answers": {
-      "en": "Payment artifacts remain tokenized and never touch the browser in fallback mode. The pipeline keeps PCI DSS requirements 3-11 active with rotating keys, tamper-evident logs, and segregation of cardholder data.",
-      "es": "Los artefactos de pago se tokenizan y nunca pasan por el navegador en modo local. El flujo mantiene activos los requisitos PCI DSS 3-11 con llaves rotativas, bitácoras con evidencia de manipulación y segregación de datos de tarjeta."
-    }
-  },
-  {
-    "id": "privacy",
-    "title": "Privacy and governance",
-    "prompt": "privacy privacidad gdpr ccpa datos personales data retention retencion",
-    "answers": {
-      "en": "Your inputs stay governed by GDPR/CCPA policies. Locally cached snippets auto-expire after the secure transfer succeeds so we don't retain personal data longer than necessary.",
-      "es": "Tus datos siguen las políticas GDPR/CCPA. Los fragmentos almacenados localmente se eliminan automáticamente cuando la transferencia segura se completa para no conservar información personal más de lo necesario."
-    }
-  },
-  {
-    "id": "observability",
-    "title": "Telemetry and observability",
-    "prompt": "observability telemetry metrics lighthouse core web vitals logging monitoreo",
-    "answers": {
-      "en": "We monitor Lighthouse CI, Core Web Vitals, and anomaly baselines even when offline. I can note any lag or UX regression you see so Site Reliability can replay it once the SIEM connection stabilizes.",
-      "es": "Supervisamos Lighthouse CI, Core Web Vitals y líneas base de anomalías incluso estando offline. Puedo registrar cualquier demora o regresión UX que notes para que el equipo de fiabilidad la revise cuando se estabilice la conexión al SIEM."
-    }
-  },
-  {
-    "id": "roadmap",
-    "title": "Roadmap and experimentation",
-    "prompt": "roadmap plan futuro features experimentos tiny llm tiny ml",
-    "answers": {
-      "en": "Upcoming drops include Tiny LLM inference for cost-efficient personalization, plus PWA hardening with background sync. Share any experiments you'd like prioritized and I'll flag them for the product council.",
-      "es": "Los próximos lanzamientos incluyen inferencia con Tiny LLM para personalización eficiente y mejoras PWA con sincronización en segundo plano. Comparte los experimentos que quieras priorizar y los marcaré para el consejo de producto."
-    }
-  },
-  {
-    "id": "escalate",
-    "title": "Escalation request",
-    "prompt": "escalate escalation soporte support human agente contactar help ayuda",
-    "answers": {
-      "en": "I've logged your escalation request. Drop any context you want forwarded and I'll package it for the human team the moment the primary channel is live again.",
-      "es": "He registrado tu solicitud de escalación. Comparte el contexto que desees y lo enviaré al equipo humano en cuanto el canal principal vuelva a estar disponible."
-    }
-  },
-  {
-    "id": "goodbye",
-    "title": "Closing the session",
-    "prompt": "goodbye thanks thank you bye adios gracias",
-    "answers": {
-      "en": "Thank you for checking in! I'll keep monitoring the secure edge link and sync our transcript automatically once connectivity is restored.",
-      "es": "¡Gracias por visitar Chattia! Seguiré monitoreando el enlace seguro y sincronizaré nuestra transcripción en cuanto regrese la conectividad."
-    }
-  },
-  {
-    "id": "default",
-    "title": "General fallback",
-    "prompt": "general fallback default cualquier cosa",
-    "answers": {
-      "en": "I'm temporarily offline from the core Chattia brain, but your message is captured with compliance metadata and will be replayed as soon as the connection returns.",
-      "es": "Estoy temporalmente desconectada del núcleo de Chattia, pero tu mensaje queda registrado con metadatos de cumplimiento y se reenviará en cuanto vuelva la conexión."
-    }
-  }
 ]
