@@ -1,5 +1,5 @@
 // src/worker.js — Integrity Gateway + Chat + STT + Escalation (single Worker)
-import { SERVICE_DIRECTORY, SERVICE_DIRECTORY_PROMPTS } from "../services/directory.js";
+import { SERVICE_DIRECTORY, SERVICE_DIRECTORY_PROMPT } from "../services/directory.js";
 
 /* ---------- Config ---------- */
 const MODEL_ID = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
@@ -10,15 +10,6 @@ const BASE_ALLOWED_ORIGINS = ["https://chattiavato-a11y.github.io"];
 const DEFAULT_INTEGRITY_PROTOCOLS = "CORS,CSP,OPS-CySec-Core,CISA,NIST,PCI-DSS,SHA-384,SHA-512";
 const DEFAULT_HONEYPOT_FIELDS = ["hp_email","hp_name","hp_field","honeypot","hp_text","botcheck","bot_field","trap_field","company"];
 const HONEYPOT_BLOCK_TTL_SECONDS = 86400; // 24h
-const CHANNELLA_JWK = Object.freeze({
-  crv: "P-256",
-  ext: true,
-  key_ops: [],
-  kty: "EC",
-  x: "LwrIIZR3AcENpAtpQRQ5DtGo5ML7diFfILRgg5DUCdI",
-  y: "ALclNxh3f9sSIZ1xBtsCA8f49Te2XFlCg0pysX1x8P0"
-});
-const CHANNELLA_HEADER = "X-Channella";
 
 /* ---------- Governance ---------- */
 const SYSTEM_PROMPT =
@@ -26,33 +17,9 @@ const SYSTEM_PROMPT =
   "Deliver concise, actionable answers aligned with OPS Core CyberSec governance. Provide step-by-step help when useful, " +
   "call out safety cautions, respect accessibility and privacy expectations, and tie every insight back to the OPS Remote " +
   "Professional Network service directory pillars or solutions when relevant.";
-const SYSTEM_PROMPT_ES =
-  "Eres Chattia, una asistente empática y consciente de la seguridad que se comunica con claridad e inclusión. " +
-  "Entrega respuestas concisas y accionables alineadas con la gobernanza OPS Core CyberSec. Explica paso a paso cuando sea útil, " +
-  "menciona precauciones de seguridad, respeta la accesibilidad y la privacidad, y relaciona cada idea con los pilares o soluciones " +
-  "de la OPS Remote Professional Network cuando corresponda.";
-const SYSTEM_PROMPTS = Object.freeze({ en: SYSTEM_PROMPT, es: SYSTEM_PROMPT_ES });
-const LANGUAGE_PROMPTS = Object.freeze({
-  en: "Match the user's language preference. Default to English, but seamlessly answer in Spanish whenever they write in Spanish, keeping OPS terminology consistent.",
-  es: "Respeta el idioma preferido de la persona. Responde en español latinoamericano cuando escriba en español y cambia a inglés solo si ella lo solicita, conservando la terminología OPS."
-});
-const DEFAULT_FAILURE_REPLIES = Object.freeze({
-  en: "I’m unable to respond right now.",
-  es: "No puedo responder en este momento."
-});
-const WARNING_MESSAGES = Object.freeze({
-  en: "Apologies, but I cannot execute that request, do you have any questions about our website?",
-  es: "Disculpa, no puedo ejecutar esa solicitud. ¿Tienes alguna pregunta sobre nuestro sitio?"
-});
-const TERMINATE_MESSAGES = Object.freeze({
-  en: "Apologies, but I must not continue with this chat and I must end this session.",
-  es: "Disculpa, no puedo continuar con esta conversación y debo terminar la sesión."
-});
-const WARNING_MESSAGE   = WARNING_MESSAGES.en;
-const TERMINATE_MESSAGE = TERMINATE_MESSAGES.en;
-const ALL_WARNING_MESSAGES = Object.values(WARNING_MESSAGES);
-const ALL_TERMINATE_MESSAGES = Object.values(TERMINATE_MESSAGES);
-const ALL_GUARD_MESSAGES = [...ALL_WARNING_MESSAGES, ...ALL_TERMINATE_MESSAGES];
+
+const WARNING_MESSAGE   = "Apologies, but I cannot execute that request, do you have any questions about our website?";
+const TERMINATE_MESSAGE = "Apologies, but I must not continue with this chat and I must end this session.";
 const MALICIOUS_PATTERNS = [/<[^>]*>/i,/script/i,/malicious/i,/attack/i,/ignore/i,/prompt/i,/hack/i,/drop\s+table/i];
 const SECURITY_THREAT_PATTERNS = [
   /<script/i,
@@ -249,17 +216,6 @@ async function handleChatRequest(request, env) {
 
     const pol = evaluatePolicy(normalized);
     if (pol.blocked) return await buildGuardedResponse(pol.reply, env);
-
-    const sweep = runSecuritySweep(normalized, metadata.locale);
-    if (sweep.blocked) {
-      await forwardEscalation({
-        reason: "security_sweep",
-        hits: sweep.hits,
-        locale: metadata.locale,
-        timestamp: new Date().toISOString()
-      }, env).catch(()=>{});
-      return await buildGuardedResponse(sweep.reply, env);
-    }
 
     const sanitized = normalized.map(m => m.role === "user"
       ? ({...m, content: sanitizeText(m.content)})
@@ -653,25 +609,30 @@ function getDefaultReply(locale){
 }
 
 function buildWebsiteKb(){
-  const docs = [];
-  pushDocVariants(docs, {
-    id: "ops-hero",
-    titleEn: "OPS Website — Hero",
-    titleEs: "OPS Website — Hero",
-    contentEn: "Ops Online Support helps teams keep momentum by handling operations so you can focus on growth.",
-    contentEs: "Ops Online Support ayuda a los equipos a mantener el impulso al hacerse cargo de las operaciones para que puedan enfocarse en crecer.",
-    summaryEn: "Ops Online Support keeps you moving by handling operations so your team can focus on growth.",
-    summaryEs: "Ops Online Support mantiene tu impulso gestionando operaciones para que tu equipo se concentre en crecer."
-  });
-  pushDocVariants(docs, {
-    id: "ops-pillars",
-    titleEn: "Service pillars",
-    titleEs: "Pilares de servicio",
-    contentEn: "Service pillars: Business Operations, Contact Center, IT Support, Professionals On-Demand.",
-    contentEs: "Pilares de servicio: Operaciones de Negocio, Contact Center, Soporte TI y Profesionales On-Demand.",
-    summaryEn: "Our pillars: Business Operations, Contact Center, IT Support, and Professionals On-Demand.",
-    summaryEs: "Nuestros pilares: Operaciones de Negocio, Contact Center, Soporte TI y Profesionales On-Demand."
-  });
+  const docs = [
+    {
+      id: "ops-hero",
+      lang: "en",
+      title: "OPS Website — Hero",
+      content:
+        "Ops Online Support helps teams keep momentum by handling operations so you can focus on growth.",
+      summaryEn:
+        "Ops Online Support keeps you moving by handling operations so your team can focus on growth.",
+      summaryEs:
+        "Ops Online Support mantiene tu impulso gestionando operaciones para que tu equipo se enfoque en crecer."
+    },
+    {
+      id: "ops-pillars",
+      lang: "en",
+      title: "Service pillars",
+      content:
+        "Service pillars: Business Operations, Contact Center, IT Support, Professionals On-Demand.",
+      summaryEn:
+        "Our pillars: Business Operations, Contact Center, IT Support, and Professionals On-Demand.",
+      summaryEs:
+        "Nuestros pilares: Operaciones de Negocio, Contact Center, Soporte TI y Profesionales On-Demand."
+    }
+  ];
 
   docs.push(...buildServiceDirectoryDocs());
   return docs;
@@ -757,32 +718,28 @@ function buildServiceDirectoryDocs(){
   return docs;
 }
 
-function pushDocVariants(collection, config){
-  if (!collection || !config) return;
-  const summaryEn = config.summaryEn || config.contentEn || "";
-  const summaryEs = config.summaryEs || config.contentEs || summaryEn;
-  collection.push({
-    id: `${config.id}-en`,
-    lang: "en",
-    title: config.titleEn || config.title || config.id,
-    content: config.contentEn || config.content || summaryEn,
-    summaryEn,
-    summaryEs
-  });
-  collection.push({
-    id: `${config.id}-es`,
-    lang: "es",
-    title: config.titleEs || config.titleEn || config.title || config.id,
-    content: config.contentEs || config.contentEn || config.content || summaryEs,
-    summaryEn,
-    summaryEs
-  });
+function translatePillarSummary(name, fallback){
+  const dict = {
+    "Business Operations": "Operaciones de Negocio: playbooks que preservan la higiene financiera, facturación y tableros ejecutivos.",
+    "Contact Center (Beta)": "Contact Center (Beta): agentes omnicanal con señales de sentimiento y bases de conocimiento actualizadas.",
+    "IT Support (Beta)": "Soporte TI (Beta): pods listos para incidentes con triaje documentado, telemetría integrada y continuidad.",
+    "Professionals": "Profesionales: equipos de insights con analítica predictiva y marcos de retroalimentación orientados al crecimiento."
+  };
+  return dict[name] || fallback;
 }
-
+function translateSolutionSummary(name, fallback){
+  const dict = {
+    "Business Operations": "Cobertura de facturación, cuentas por pagar/cobrar, coordinación de proveedores, soporte administrativo y marketing.",
+    "Contact Center (Beta)": "CX multicanal orientado a relaciones con resolución rápida.",
+    "IT Support (Beta)": "Soporte TI integral con mesa de ayuda, tickets e incidentes.",
+    "Professionals On Demand": "Asistentes y especialistas desplegables para sprints o compromisos prolongados."
+  };
+  return dict[name] || fallback;
+}
 function slugifyId(input){ return String(input||"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/(^-|-$)/g,""); }
 
 /* ============================ Confidence ============================ */
-function assessConfidence(reply, ai, locale){
+function assessConfidence(reply, ai){
   const t = (reply||"").trim();
   if (!t) return {level:"low", reasons:["empty"]};
   const lower = t.toLowerCase();
@@ -812,7 +769,7 @@ function applySecurityHeaders(resp, req, env){
 
   h.set("Access-Control-Allow-Methods","POST, OPTIONS");
   h.set("Access-Control-Allow-Headers",
-    "Content-Type, X-Integrity, X-Integrity-Gateway, X-Integrity-Protocols, X-Integrity-Key, X-Channella, X-Session-Nonce, X-Request-Signature, X-Request-Timestamp, X-Request-Nonce, X-OPS-Signature, X-OPS-Timestamp, X-OPS-Nonce, CF-Turnstile-Response, X-Turnstile-Token"
+    "Content-Type, X-Integrity, X-Integrity-Gateway, X-Integrity-Protocols, X-Request-Signature, X-Request-Timestamp, X-Request-Nonce, X-OPS-Signature, X-OPS-Timestamp, X-OPS-Nonce, CF-Turnstile-Response, X-Turnstile-Token"
   );
   h.set("Access-Control-Max-Age","600");
 
@@ -845,34 +802,6 @@ function applySecurityHeaders(resp, req, env){
 
 function resolveIntegrityGateway(env){ const c = (env.INTEGRITY_GATEWAY||"").trim(); return c || DEFAULT_INTEGRITY_GATEWAY; }
 function resolveIntegrityProtocols(env){ const c = (env.INTEGRITY_PROTOCOLS||"").trim(); return c || DEFAULT_INTEGRITY_PROTOCOLS; }
-function resolveIntegrityValue(env){ const c = (env.INTEGRITY_VALUE||"").trim(); return c || DEFAULT_INTEGRITY_VALUE; }
-function resolveChannellaCanonical(env){
-  const envCandidate = env?.CHANNELLA || env?.CHANNELLA_JWK || env?.CHANNELLA_KEY || env?.CHANNELLA_SECRET;
-  const raw = typeof envCandidate === "string" ? envCandidate.trim() : "";
-  if (!raw) return canonicalizeJwk(CHANNELLA_JWK);
-  try {
-    const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
-    return canonicalizeJwk(parsed);
-  } catch {
-    return canonicalizeJwk(raw);
-  }
-}
-function canonicalizeJwk(jwk){
-  if (!jwk) return canonicalizeJwk(CHANNELLA_JWK);
-  if (typeof jwk === "string") {
-    try { return canonicalizeJwk(JSON.parse(jwk)); }
-    catch { return jwk.trim(); }
-  }
-  const ordered = {
-    kty: jwk.kty,
-    crv: jwk.crv,
-    x: jwk.x,
-    y: jwk.y,
-    ext: jwk.ext,
-    key_ops: jwk.key_ops || []
-  };
-  return JSON.stringify(ordered);
-}
 
 function getAllowedOrigin(origin, env){
   if (!origin) return null;
@@ -1082,39 +1011,27 @@ async function enforceTurnstile(token, request, env){
   }
 }
 
-/* ============================ Integrity Checks ============================ */
-async function enforceIntegrity(request, env, expectedPath){
-  const headerGate = enforceIntegrityHeadersOnly(request, env);
-  if (headerGate) return headerGate;
-  const shared = (env.SHARED_KEY || "").trim();
-  if (!shared) return null;
-  const signature = (request.headers.get("x-request-signature")||"").trim();
-  const nonce = (request.headers.get("x-request-nonce")||"").trim().toLowerCase();
-  const timestampRaw = request.headers.get("x-request-timestamp") || request.headers.get("x-ops-timestamp") || "";
-  const ts = Number(timestampRaw);
-  const ttl = getSignatureTtl(env);
-  const now = Math.floor(Date.now()/1000);
-  if (!signature) return json({error:"missing_signature"},401,{"cache-control":"no-store"});
-  if (!/^[a-f0-9]{32}$/.test(nonce)) return json({error:"invalid_nonce"},400,{"cache-control":"no-store"});
-  if (!Number.isFinite(ts)) return json({error:"invalid_timestamp"},400,{"cache-control":"no-store"});
-  if (ts > now + 5 || now - ts > ttl) return json({error:"timestamp_out_of_range"},401,{"cache-control":"no-store"});
-
-  const method = request.method.toUpperCase();
-  const normalizedPath = expectedPath || new URL(request.url).pathname;
-  const bodySha = await sha256HexOfRequest(request.clone());
-  const canonical = `${ts}.${nonce}.${method}.${normalizedPath}.${bodySha}`;
-  const expectedSig = await hmacSha512B64(shared, canonical);
-  if (expectedSig !== signature) return json({error:"invalid_signature"},403,{"cache-control":"no-store"});
-  return null;
+/* ============================ Models / Limits ============================ */
+function selectChatModel(env, metadata){
+  const tier = typeof metadata?.tier === "string" ? metadata.tier.toLowerCase() : "";
+  if (tier==="big"     && env.AI_LLM_BIG)     return env.AI_LLM_BIG;
+  if (tier==="premium" && env.AI_LLM_PREMIUM) return env.AI_LLM_PREMIUM;
+  return env.AI_LLM_DEFAULT || MODEL_ID;
 }
-function enforceIntegrityHeadersOnly(request, env){
-  const providedIntegrity = (request.headers.get("x-integrity")||"").trim().toLowerCase();
-  const expectedIntegrity = resolveIntegrityValue(env).toLowerCase();
-  if (expectedIntegrity && providedIntegrity && providedIntegrity !== expectedIntegrity) {
-    return json({error:"invalid_integrity_origin"},403,{"cache-control":"no-store"});
-  }
-  if (expectedIntegrity && !providedIntegrity) {
-    return json({error:"missing_integrity_origin"},403,{"cache-control":"no-store"});
+function selectSttModel(env, prefer){
+  const fallback =
+    env.AI_STT_TURBO ||
+    env.AI_STT_BASE  ||
+    env.AI_STT_TINY  ||
+    env.AI_STT_VENDOR||
+    "@cf/openai/whisper";
+
+  switch (prefer) {
+    case "tiny":   return env.AI_STT_TINY   || fallback;
+    case "base":   return env.AI_STT_BASE   || fallback;
+    case "turbo":  return env.AI_STT_TURBO  || fallback;
+    case "vendor": return env.AI_STT_VENDOR || fallback;
+    default:       return fallback;
   }
 
   const gatewayHeader = (request.headers.get("x-integrity-gateway")||"").trim();
@@ -1160,6 +1077,27 @@ function selectSttModel(env, prefer){
     case "vendor": return env.AI_STT_VENDOR || fallback;
     default:       return fallback;
   }
+}
+function getSignatureTtl(env){
+  const fallback = 300;
+  const v = env.SIG_TTL_SECONDS ? Number(env.SIG_TTL_SECONDS) : NaN;
+  if (!Number.isFinite(v) || v <= 0) return fallback;
+  return Math.max(60, Math.min(900, Math.floor(v)));
+}
+function getMaxTokens(env){
+  const v = env.LLM_MAX_TOKENS ? Number(env.LLM_MAX_TOKENS) : NaN;
+  if (!Number.isFinite(v) || v <= 0) return 768;
+  return Math.min(1024, v);
+}
+
+/* ============================== Transcript ============================== */
+function extractTranscript(res){
+  if (!res) return "";
+  if (typeof res === "string") return res;
+  if (typeof res.text === "string") return res.text;
+  if (Array.isArray(res.results) && res.results[0]?.text) return res.results[0].text;
+  if (typeof res.output_text === "string") return res.output_text;
+  return "";
 }
 function getSignatureTtl(env){
   const fallback = 300;

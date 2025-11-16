@@ -48,14 +48,6 @@ body{
 #status-banner.status-offline{ background:rgba(230,0,0,.25) }
 #status-banner.status-fallback{ background:rgba(255,180,0,.25) }
 
-#gateway-link{ padding:0 .9rem .3rem; background:var(--surface-soft); border-bottom:1px solid rgba(255,255,255,.12) }
-.gateway-link a{ color:var(--clr-primary); font-size:.85rem; text-decoration:none; font-weight:600 }
-.gateway-link a:focus-visible{ outline:2px solid currentColor; outline-offset:2px }
-
-.security-panel{ background:var(--surface-soft); padding:.6rem .9rem; border-bottom:1px solid rgba(255,255,255,.12); font-size:.8rem; line-height:1.35 }
-.security-panel h2{ margin:.1rem 0; font-size:.85rem; text-transform:uppercase; letter-spacing:.08em; color:var(--clr-primary) }
-.security-panel p{ margin:.2rem 0 0; color:var(--bot-text) }
-
 #chat-log{ flex:1; overflow:auto; padding:1rem; background:var(--surface-alt); color:var(--bot-text); font-size:.95rem }
 .chat-msg{ margin:.5rem 0; max-width:90%; line-height:1.35; word-wrap:break-word }
 .user{ margin-left:auto; background:var(--clr-primary); color:var(--user-text); padding:.5rem .7rem; border-radius:16px 16px 0 16px }
@@ -85,13 +77,6 @@ body{
     </div>
   </div>
   <div id="status-banner" class="status-online"><span id="statusText">Secure link active</span></div>
-  <div id="gateway-link" class="gateway-link">
-    <a id="cfGatewayLink" href="https://withered-mouse-9aee.grabem-holdem-nuts-right.workers.dev/" target="_blank" rel="noopener">Connect to Cloudflare Worker</a>
-  </div>
-  <section id="security-panel" class="security-panel" aria-live="polite">
-    <h2 id="securityTitle">OPS CySec Core</h2>
-    <p id="securityText">Clears, cleans, scans, and sanitizes every interaction to block injection, XSS, phishing, spoofing, cloning, and malware in line with NIST, CISA, and PCI DSS.</p>
-  </section>
   <div id="chat-log" aria-live="polite"></div>
   <div id="chatbot-form-container">
     <form id="chatbot-input-row" autocomplete="off">
@@ -112,25 +97,6 @@ const INTEGRITY_VALUE   = (document.querySelector('meta[name="integrity-token"]'
 const CF_WORKER_URL = 'https://withered-mouse-9aee.grabem-holdem-nuts-right.workers.dev/';
 const INTEGRITY_GATEWAY = CF_WORKER_URL.replace(/\/$/, '');
 const INTEGRITY_PROTOCOLS = 'CORS,CSP,OPS-CySec-Core,CISA,NIST,PCI-DSS,SHA-384,SHA-512';
-const CHANNELLA_JWK = Object.freeze({
-  crv: 'P-256',
-  ext: true,
-  key_ops: [],
-  kty: 'EC',
-  x: 'LwrIIZR3AcENpAtpQRQ5DtGo5ML7diFfILRgg5DUCdI',
-  y: 'ALclNxh3f9sSIZ1xBtsCA8f49Te2XFlCg0pysX1x8P0'
-});
-const CHANNELLA_HEADER = 'X-Channella';
-const CHANNELLA_CANONICAL = canonicalizeJwk(CHANNELLA_JWK);
-const CLIENT_THREAT_PATTERNS = [
-  /<script/i,
-  /javascript:/i,
-  /onerror\s*=|onload\s*=/i,
-  /data:text\/html/i,
-  /union\s+select/i,
-  /drop\s+table/i,
-  /xss|csrf|sql\s+injection|sniffing|spoofing|phishing|clon(e|ing)|malware/i
-];
 
 const API_BASE = INTEGRITY_GATEWAY;           // single Worker handles auth+chat+stt
 const CHAT_PATH = '/api/chat';
@@ -141,7 +107,6 @@ const ESCALATION_URL = `${API_BASE}/fallback/escalate`;
 const STATUS_POLL_INTERVAL_MS = 30000;
 const API_DEGRADE_MEMORY_MS = 90000;
 const CONFIDENCE_THRESHOLD = 'low'; // escalate when server marks "low"
-const SESSION_NONCE = ensureSessionNonce();
 
 /* ---------- Shared headers ---------- */
 const sharedIntegrityHeaders = Object.freeze({
@@ -165,9 +130,6 @@ const input  = document.querySelector('#chatbot-input');
 const send   = document.querySelector('#chatbot-send');
 const honeyp = document.querySelector('#chatbot-company');
 const tTok   = document.querySelector('#turnstile-token');
-const gatewayLink = document.getElementById('cfGatewayLink');
-const securityTitleEl = document.getElementById('securityTitle');
-const securityTextEl = document.getElementById('securityText');
 
 const state = { conversation:[], isSending:false };
 const integrityState = { timer:null, focusBound:false, summary:null, apiDegradedUntil:0 };
@@ -175,15 +137,11 @@ const storage = (()=>{ try{return window.localStorage;}catch{return null;} })();
 const securityState = { lastSweep:null };
 
 const i18n = Object.freeze({
-  en:{ title:'Chattia', input:'Type your message… [Enter]', sendLabel:'Send message', workerLink:'Connect to Cloudflare Worker', securityTitle:'OPS CySec Core',
-      securityCopy:'Clears, cleans, scans, and sanitizes every interaction to block injection, XSS, phishing, spoofing, cloning, sniffing, and malware (NIST + CISA + PCI DSS).',
-      securityAlert:'OPS CySec Core blocked suspicious instructions. Please describe your OPS needs without scripts or exploits.',
+  en:{ title:'Chattia', input:'Type your message… [Enter]', sendLabel:'Send message',
       errors:{ unreachable:"Error: Can’t reach Chattia." },
       status:{ online:'Secure link active', offline:'Offline – storing messages locally', fallback:'Primary API unreachable – using local safeguard' },
       notes:{ verifying:'Verifying integrity…', gatewayReady:'Integrity synchronized (signature TTL {ttl}s)', gatewayDegraded:'Integrity gateway unreachable', apiDegraded:'Primary API unreachable', offlineQueue:'Offline – local queue' } },
-  es:{ title:'Chattia', input:'Escribe tu mensaje… [Enter]', sendLabel:'Enviar mensaje', workerLink:'Conectar con Cloudflare Worker', securityTitle:'OPS CySec Core',
-      securityCopy:'Limpia, depura, escanea y desinfecta cada interacción para frenar inyección, XSS, phishing, spoofing, clonación, sniffing y malware (NIST + CISA + PCI DSS).',
-      securityAlert:'OPS CySec Core bloqueó instrucciones sospechosas. Describe tus necesidades OPS sin scripts ni exploits.',
+  es:{ title:'Chattia', input:'Escribe tu mensaje… [Enter]', sendLabel:'Enviar mensaje',
       errors:{ unreachable:'Error: No puedo conectar con Chattia.' },
       status:{ online:'Canal seguro activo', offline:'Sin conexión – guardando localmente', fallback:'API principal inalcanzable – salvaguarda local' },
       notes:{ verifying:'Verificando integridad…', gatewayReady:'Pasarela sincronizada (TTL de firma {ttl}s)', gatewayDegraded:'Pasarela inalcanzable', apiDegraded:'API inalcanzable', offlineQueue:'Sin conexión – cola local' } }
@@ -197,13 +155,6 @@ function setLocale(locale){
   input.placeholder = L.input;
   send.setAttribute('aria-label', L.sendLabel);
   langCtrl.textContent = locale==='es'?'EN':'ES';
-  if (gatewayLink){
-    gatewayLink.textContent = L.workerLink;
-    gatewayLink.setAttribute('aria-label', L.workerLink);
-    gatewayLink.href = CF_WORKER_URL;
-  }
-  if (securityTitleEl) securityTitleEl.textContent = L.securityTitle;
-  if (securityTextEl) securityTextEl.textContent = L.securityCopy;
   refreshStatusBanner();
   try{ localStorage.setItem('chattia:locale', locale); }catch{}
 }
@@ -333,55 +284,10 @@ function fallbackReply(userText){
   try { if (window.FallbackKB?.reply) return window.FallbackKB.reply(userText||'', currentLang()); } catch {}
   return currentLang()==='es' ? 'Estoy en modo local protegido. ¿En qué puedo ayudarte?' : 'I’m in safeguarded local mode. How can I help?';
 }
-
-function sanitizeClientInput(text){
-  if (!text) return '';
-  return String(text)
-    .replace(/<[^>]*>/g,' ')
-    .replace(/javascript:/gi,'')
-    .replace(/data:text\/html[^\s]*/gi,'')
-    .replace(/on\w+\s*=/gi,' ')
-    .replace(/\s+/g,' ')
-    .trim();
-}
-function clientSecuritySweep(text){
-  if (!text) return { flagged:false, hits:[] };
-  const normalized = text.toLowerCase();
-  const hits = CLIENT_THREAT_PATTERNS.filter(rx => rx.test(normalized)).map(rx => rx.toString());
-  return { flagged:hits.length>0, hits };
-}
-function getSecurityAlert(locale){
-  return (i18n[locale]?.securityAlert) || i18n.en.securityAlert;
-}
-function reportSecurityEvent(reason, detail){
-  securityState.lastSweep = { reason, detail, at: Date.now() };
-  try{
-    fetch(ESCALATION_URL, {
-      method:'POST',
-      headers:{ ...sharedIntegrityHeaders, 'Content-Type':'application/json' },
-      body: JSON.stringify({ reason, ...detail, timestamp: new Date().toISOString() })
-    });
-  }catch{}
-}
-function canonicalizeJwk(jwk){
-  if (!jwk) return canonicalizeJwk(CHANNELLA_JWK);
-  if (typeof jwk === 'string'){
-    try { return canonicalizeJwk(JSON.parse(jwk)); }
-    catch { return jwk.trim(); }
-  }
-  const ordered = { kty:jwk.kty, crv:jwk.crv, x:jwk.x, y:jwk.y, ext:jwk.ext, key_ops:jwk.key_ops||[] };
-  return JSON.stringify(ordered);
-}
-function ensureSessionNonce(){
-  const key = 'chattia:session-nonce';
-  try {
-    const stored = localStorage?.getItem(key);
-    if (stored && /^[a-f0-9]{32}$/i.test(stored)) return stored;
-  } catch {}
-  const fresh = hexNonce32();
-  try { localStorage?.setItem(key, fresh); } catch {}
-  return fresh;
-}
+setLocale((()=>{ try{ return localStorage.getItem('chattia:locale')||'en'; }catch{return 'en';} })());
+langCtrl.addEventListener('click', cycleLocale);
+bootstrapConversation();
+startIntegrityMonitor();
 
 /* ---------- Bootstrap ---------- */
 function bootstrapConversation(){
@@ -405,35 +311,19 @@ form.addEventListener('submit', async (e)=>{
   e.preventDefault();
   if (honeyp?.value.trim()) return; // honeypot
 
-  const rawMsg = input.value || '';
-  const sweepResult = clientSecuritySweep(rawMsg);
-  const safeUserText = sanitizeClientInput(rawMsg);
+  const msg = input.value.trim();
+  if (!msg) return;
   input.value=''; updateSend();
-  if (!safeUserText) return;
 
-  addMsg(safeUserText,'user');
-  recordMessage('user', safeUserText, { source:'web' });
+  addMsg(msg,'user');
+  recordMessage('user', msg, { source:'web' });
 
   const thinking = addMsg('…','bot');
-
-  if (sweepResult.flagged) {
-    const locale = currentLang();
-    const alertCopy = getSecurityAlert(locale);
-    thinking.textContent = alertCopy;
-    recordMessage('assistant', alertCopy, { source:'client_security', hits: sweepResult.hits });
-    reportSecurityEvent('client_security', { hits: sweepResult.hits, userText: safeUserText, rawText: rawMsg });
-    return;
-  }
 
   try{
     const payload = {
       messages: state.conversation.map(m => ({ role:m.role, content:m.content })),
-      metadata:{
-        channel:'chattia-web',
-        locale: currentLang(),
-        session_nonce: SESSION_NONCE,
-        security:{ channella: CHANNELLA_CANONICAL }
-      }
+      metadata:{ channel:'chattia-web', locale: currentLang() }
     };
 
     const r = await signedPost(CHAT_PATH, payload);
@@ -448,7 +338,7 @@ form.addEventListener('submit', async (e)=>{
     const confidence = (j.confidence||'').toLowerCase();
     const shouldEscalate = !reply || confidence === 'low';
     if (shouldEscalate){
-      const fb = fallbackReply(safeUserText);
+      const fb = fallbackReply(msg);
       thinking.textContent = fb;
       recordMessage('assistant', fb, { source:'fallback', reason:'low_confidence', upstreamReply: reply||null, confidence });
       // notify CF Worker for telemetry
@@ -456,7 +346,7 @@ form.addEventListener('submit', async (e)=>{
         fetch(ESCALATION_URL, {
           method:'POST',
           headers:{ ...sharedIntegrityHeaders, 'Content-Type':'application/json' },
-          body: JSON.stringify({ reason:'low_confidence', confidence, userText: safeUserText, fallback: fb, timestamp: new Date().toISOString() })
+          body: JSON.stringify({ reason:'low_confidence', confidence, userText: msg, fallback: fb, timestamp: new Date().toISOString() })
         });
       }catch{}
     } else {
@@ -467,7 +357,7 @@ form.addEventListener('submit', async (e)=>{
     refreshStatusBanner('gatewayReady', { ttl: getSummaryTtl(integrityState.summary) ?? 'N/A' });
   }catch(err){
     markApiDegraded();
-    const fb = fallbackReply(safeUserText);
+    const fb = fallbackReply(msg);
     thinking.textContent = fb;
     recordMessage('assistant', fb, { source:'fallback', reason:'network_error', error: String(err?.message||'error') });
     refreshStatusBanner('apiDegraded');
@@ -475,7 +365,7 @@ form.addEventListener('submit', async (e)=>{
       fetch(ESCALATION_URL, {
         method:'POST',
         headers:{ ...sharedIntegrityHeaders, 'Content-Type':'application/json' },
-        body: JSON.stringify({ reason:'network_error', userText: safeUserText, fallback: fb, timestamp: new Date().toISOString() })
+        body: JSON.stringify({ reason:'network_error', userText: msg, fallback: fb, timestamp: new Date().toISOString() })
       });
     }catch{}
   }finally{
