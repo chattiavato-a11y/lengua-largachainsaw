@@ -3,6 +3,7 @@ import { SERVICE_DIRECTORY, SERVICE_DIRECTORY_PROMPT } from "../services/directo
 
 /* ---------- Config ---------- */
 const MODEL_ID = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
+const DEFAULT_INTEGRITY_VALUE = "https://chattiavato-a11y.github.io";
 const DEFAULT_INTEGRITY_GATEWAY = "https://withered-mouse-9aee.grabem-holdem-nuts-right.workers.dev";
 const DEFAULT_HIGH_CONFIDENCE_URL = "https://ops-chattia-api.grabem-holdem-nuts-right.workers.dev/";
 const BASE_ALLOWED_ORIGINS = ["https://chattiavato-a11y.github.io"];
@@ -20,6 +21,19 @@ const SYSTEM_PROMPT =
 const WARNING_MESSAGE   = "Apologies, but I cannot execute that request, do you have any questions about our website?";
 const TERMINATE_MESSAGE = "Apologies, but I must not continue with this chat and I must end this session.";
 const MALICIOUS_PATTERNS = [/<[^>]*>/i,/script/i,/malicious/i,/attack/i,/ignore/i,/prompt/i,/hack/i,/drop\s+table/i];
+const SECURITY_THREAT_PATTERNS = [
+  /<script/i,
+  /javascript:/i,
+  /onerror\s*=|onload\s*=/i,
+  /data:text\/html/i,
+  /union\s+select/i,
+  /drop\s+table/i,
+  /xss|csrf|sql\s+injection|sniffing|spoofing|phishing|clon(e|ing)|malware/i
+];
+const SECURITY_ALERT_MESSAGES = Object.freeze({
+  en: "Security sweep blocked suspicious instructions. Please restate your OPS request without code or exploits.",
+  es: "El barrido de seguridad bloqueó instrucciones sospechosas. Reformula tu solicitud OPS sin código ni exploits."
+});
 const WEBSITE_KEYWORDS   = ["website","site","chattia","product","service","support","order","account","pricing","contact","help"];
 
 /* ---------- Minimal BM25-ish website KB ---------- */
@@ -382,12 +396,45 @@ async function forwardEscalation(payload, env) {
 /* ============================ Policy + BM25 ============================ */
 function sanitizeText(s) {
   if (!s) return "";
-  return String(s).replace(/[^\x09\x0A\x0D\x20-\x7E\u00A0-\uFFFF]/g,"").replace(/\s+/g," ").trim();
+  const cleared = cleanseUserInput(String(s));
+  return cleared.replace(/[^\x09\x0A\x0D\x20-\x7E\u00A0-\uFFFF]/g,"").replace(/\s+/g," ").trim();
+}
+function cleanseUserInput(input){
+  if (!input) return "";
+  return String(input)
+    .replace(/<[^>]*>/g," ")
+    .replace(/javascript:/gi,"")
+    .replace(/data:text\/html[^\s]*/gi,"")
+    .replace(/on\w+\s*=/gi," ")
+    .replace(/\b(alert|prompt|confirm)\s*\(/gi,"$1 ")
+    .trim();
 }
 function sanitizeLocale(s) {
   if (!s) return "en";
   const t = String(s).trim().toLowerCase();
   return /^[a-z]{2}(-[a-z]{2})?$/.test(t) ? t : "en";
+}
+function runSecuritySweep(messages, locale){
+  if (!Array.isArray(messages) || !messages.length) return { blocked:false };
+  const matches = [];
+  for (const msg of messages){
+    if (!msg || msg.role !== "user" || !msg.content) continue;
+    const hits = detectThreatIndicators(msg.content);
+    if (hits.length){
+      matches.push({ hits, snippet: sanitizeText(String(msg.content)).slice(0,160) });
+    }
+  }
+  if (!matches.length) return { blocked:false };
+  return {
+    blocked:true,
+    reply: SECURITY_ALERT_MESSAGES[locale === "es" ? "es" : "en"],
+    hits: matches
+  };
+}
+function detectThreatIndicators(text){
+  if (!text) return [];
+  const normalized = String(text).toLowerCase();
+  return SECURITY_THREAT_PATTERNS.filter(rx => rx.test(normalized)).map(rx => rx.toString());
 }
 function evaluatePolicy(messages) {
   if (!Array.isArray(messages)||!messages.length) return {blocked:false};
@@ -735,13 +782,20 @@ function applySecurityHeaders(resp, req, env){
 
   const gw = resolveIntegrityGateway(env);
   const protos = resolveIntegrityProtocols(env);
+  const channella = resolveChannellaCanonical(env);
+  const integrityValue = resolveIntegrityValue(env);
   h.set("Cross-Origin-Resource-Policy","same-origin");
   h.set("Cross-Origin-Opener-Policy","same-origin");
   h.set("X-OPS-CYSEC-CORE","active");
   h.set("X-Compliance-Frameworks", protos);
-  h.set("Integrity", gw);
+  h.set("Integrity", integrityValue);
   h.set("X-Integrity-Gateway", gw);
   h.set("X-Integrity-Protocols", protos);
+  h.set("X-Integrity", integrityValue);
+  h.set("X-Integrity-Key", channella);
+  h.set(CHANNELLA_HEADER, channella);
+  const sessionNonce = (req.headers.get("x-session-nonce")||"").trim();
+  if (sessionNonce) h.set("X-Session-Nonce", sessionNonce);
 
   return new Response(resp.body, { status: resp.status, statusText: resp.statusText, headers: h });
 }
@@ -979,6 +1033,71 @@ function selectSttModel(env, prefer){
     case "vendor": return env.AI_STT_VENDOR || fallback;
     default:       return fallback;
   }
+
+  const gatewayHeader = (request.headers.get("x-integrity-gateway")||"").trim();
+  const expectedGateway = resolveIntegrityGateway(env);
+  if (gatewayHeader && gatewayHeader !== expectedGateway) {
+    return json({error:"invalid_integrity_gateway"},403,{"cache-control":"no-store"});
+  }
+
+  const channellaHeader = (request.headers.get("x-integrity-key") || request.headers.get(CHANNELLA_HEADER) || "").trim();
+  const canonicalChannella = resolveChannellaCanonical(env);
+  if (!channellaHeader) {
+    return json({error:"missing_channella"},403,{"cache-control":"no-store"});
+  }
+  if (channellaHeader !== canonicalChannella) {
+    return json({error:"invalid_channella"},403,{"cache-control":"no-store"});
+  }
+  const sessionNonce = (request.headers.get("x-session-nonce")||"").trim().toLowerCase();
+  if (!/^[a-f0-9]{32}$/.test(sessionNonce)) {
+    return json({error:"invalid_session_nonce"},403,{"cache-control":"no-store"});
+  }
+  return null;
+}
+
+/* ============================ Models / Limits ============================ */
+function selectChatModel(env, metadata){
+  const tier = typeof metadata?.tier === "string" ? metadata.tier.toLowerCase() : "";
+  if (tier==="big"     && env.AI_LLM_BIG)     return env.AI_LLM_BIG;
+  if (tier==="premium" && env.AI_LLM_PREMIUM) return env.AI_LLM_PREMIUM;
+  return env.AI_LLM_DEFAULT || MODEL_ID;
+}
+function selectSttModel(env, prefer){
+  const fallback =
+    env.AI_STT_TURBO ||
+    env.AI_STT_BASE  ||
+    env.AI_STT_TINY  ||
+    env.AI_STT_VENDOR||
+    "@cf/openai/whisper";
+
+  switch (prefer) {
+    case "tiny":   return env.AI_STT_TINY   || fallback;
+    case "base":   return env.AI_STT_BASE   || fallback;
+    case "turbo":  return env.AI_STT_TURBO  || fallback;
+    case "vendor": return env.AI_STT_VENDOR || fallback;
+    default:       return fallback;
+  }
+}
+function getSignatureTtl(env){
+  const fallback = 300;
+  const v = env.SIG_TTL_SECONDS ? Number(env.SIG_TTL_SECONDS) : NaN;
+  if (!Number.isFinite(v) || v <= 0) return fallback;
+  return Math.max(60, Math.min(900, Math.floor(v)));
+}
+function getMaxTokens(env){
+  const v = env.LLM_MAX_TOKENS ? Number(env.LLM_MAX_TOKENS) : NaN;
+  if (!Number.isFinite(v) || v <= 0) return 768;
+  return Math.min(1024, v);
+}
+
+/* ============================== Transcript ============================== */
+function extractTranscript(res){
+  if (!res) return "";
+  if (typeof res === "string") return res;
+  if (typeof res.text === "string") return res.text;
+  if (Array.isArray(res.results) && res.results[0]?.text) return res.results[0].text;
+  if (typeof res.output_text === "string") return res.output_text;
+  return "";
 }
 function getSignatureTtl(env){
   const fallback = 300;

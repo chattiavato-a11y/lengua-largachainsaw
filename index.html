@@ -94,7 +94,8 @@ body{
 <script>
 /* ---------- CONFIG (must match Worker) ---------- */
 const INTEGRITY_VALUE   = (document.querySelector('meta[name="integrity-token"]')?.content||'').trim() || 'https://chattiavato-a11y.github.io';
-const INTEGRITY_GATEWAY = 'https://withered-mouse-9aee.grabem-holdem-nuts-right.workers.dev';
+const CF_WORKER_URL = 'https://withered-mouse-9aee.grabem-holdem-nuts-right.workers.dev/';
+const INTEGRITY_GATEWAY = CF_WORKER_URL.replace(/\/$/, '');
 const INTEGRITY_PROTOCOLS = 'CORS,CSP,OPS-CySec-Core,CISA,NIST,PCI-DSS,SHA-384,SHA-512';
 
 const API_BASE = INTEGRITY_GATEWAY;           // single Worker handles auth+chat+stt
@@ -111,7 +112,10 @@ const CONFIDENCE_THRESHOLD = 'low'; // escalate when server marks "low"
 const sharedIntegrityHeaders = Object.freeze({
   'X-Integrity': INTEGRITY_VALUE,
   'X-Integrity-Gateway': INTEGRITY_GATEWAY,
-  'X-Integrity-Protocols': INTEGRITY_PROTOCOLS
+  'X-Integrity-Protocols': INTEGRITY_PROTOCOLS,
+  'X-Integrity-Key': CHANNELLA_CANONICAL,
+  [CHANNELLA_HEADER]: CHANNELLA_CANONICAL,
+  'X-Session-Nonce': SESSION_NONCE
 });
 
 /* ---------- UI refs ---------- */
@@ -130,6 +134,7 @@ const tTok   = document.querySelector('#turnstile-token');
 const state = { conversation:[], isSending:false };
 const integrityState = { timer:null, focusBound:false, summary:null, apiDegradedUntil:0 };
 const storage = (()=>{ try{return window.localStorage;}catch{return null;} })();
+const securityState = { lastSweep:null };
 
 const i18n = Object.freeze({
   en:{ title:'Chattia', input:'Type your message… [Enter]', sendLabel:'Send message',
@@ -279,6 +284,10 @@ function fallbackReply(userText){
   try { if (window.FallbackKB?.reply) return window.FallbackKB.reply(userText||'', currentLang()); } catch {}
   return currentLang()==='es' ? 'Estoy en modo local protegido. ¿En qué puedo ayudarte?' : 'I’m in safeguarded local mode. How can I help?';
 }
+setLocale((()=>{ try{ return localStorage.getItem('chattia:locale')||'en'; }catch{return 'en';} })());
+langCtrl.addEventListener('click', cycleLocale);
+bootstrapConversation();
+startIntegrityMonitor();
 
 /* ---------- Bootstrap ---------- */
 function bootstrapConversation(){
