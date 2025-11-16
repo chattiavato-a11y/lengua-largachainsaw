@@ -128,21 +128,6 @@ const API_DEGRADE_MEMORY_MS = 90000;
 const CONFIDENCE_THRESHOLD = 'low'; // escalate when server marks "low"
 
 /* ---------- Shared headers ---------- */
-function makeNonce(bytes = 16){
-  try{
-    const u8 = crypto.getRandomValues(new Uint8Array(bytes));
-    return Array.from(u8, b => b.toString(16).padStart(2,'0')).join('');
-  }catch{
-    let out = '';
-    for(let i=0;i<bytes;i++) out += ((Math.random()*256)|0).toString(16).padStart(2,'0');
-    return out;
-  }
-}
-
-const CHANNELLA_HEADER = 'X-OPS-CHANNELLA';
-const CHANNELLA_CANONICAL = 'chattia.ops.web';
-const SESSION_NONCE = makeNonce();
-
 const sharedIntegrityHeaders = Object.freeze({
   'X-Integrity': INTEGRITY_VALUE,
   'X-Integrity-Gateway': INTEGRITY_GATEWAY,
@@ -289,7 +274,7 @@ function updateSend(){
 }
 
 /* ---------- Integrity signing ---------- */
-function hexNonce32(){ return makeNonce(); }
+function hexNonce32(){ return randomHex(16); }
 async function sha256Hex(input){
   const enc = typeof input==='string' ? new TextEncoder().encode(input) : (input instanceof Uint8Array ? input : new Uint8Array(input));
   const d = await crypto.subtle.digest('SHA-256', enc);
