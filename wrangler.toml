@@ -1,22 +1,10 @@
-# wrangler.toml — Integrity Gateway (withered-mouse-9aee…workers.dev)
+# wrangler.toml  (Integrity Gateway) — minimal, no KV IDs or secrets here
+
 name = "ops-integrity-gateway"
 main = "src/worker.js"
 compatibility_date = "2025-11-01"
 workers_dev = true
 
-[[kv_namespaces]]
-binding   = "OPS_NONCE_KV"
-id        = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-preview_id= "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
-
-[vars]
-UI_ORIGINS          = "https://chattiavato-a11y.github.io"
-INTEGRITY_REQUIRED  = "true"
-ALLOW_DASH          = "false"
-ALLOW_WORKERS_DEV   = "false"
-INTEGRITY_GATEWAY   = "https://withered-mouse-9aee.grabem-holdem-nuts-right.workers.dev"
-INTEGRITY_PROTOCOLS = "CORS,CSP,OPS-CySec-Core,CISA,NIST,PCI-DSS,SHA-384,SHA-512"
-SIG_TTL_SECONDS     = "300"
-
-# Secrets to set in Dashboard for THIS worker:
-# - SHARED_KEY
+# Bindings (KV/secrets/vars) are added via Cloudflare Dashboard only.
+# Capabilities & capacities remain: AI binding, OPS_* KV namespaces, optional WebLLM R2 bucket,
+# integrity vars, and escalation URL are all managed via dashboard bindings for efficiency.
