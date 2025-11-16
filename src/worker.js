@@ -1,25 +1,16 @@
-// src/worker.js — Integrity Gateway (Auth → Chat + STT) with escalation
+// src/worker.js — Integrity Gateway + Chat + STT + Escalation (single Worker)
 import { SERVICE_DIRECTORY, SERVICE_DIRECTORY_PROMPT } from "../services/directory.js";
 
+/* ---------- Config ---------- */
 const MODEL_ID = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
 const DEFAULT_INTEGRITY_GATEWAY = "https://withered-mouse-9aee.grabem-holdem-nuts-right.workers.dev";
 const DEFAULT_HIGH_CONFIDENCE_URL = "https://ops-chattia-api.grabem-holdem-nuts-right.workers.dev/";
 const BASE_ALLOWED_ORIGINS = ["https://chattiavato-a11y.github.io"];
 const DEFAULT_INTEGRITY_PROTOCOLS = "CORS,CSP,OPS-CySec-Core,CISA,NIST,PCI-DSS,SHA-384,SHA-512";
-
-const DEFAULT_HONEYPOT_FIELDS = [
-  "hp_email","hp_name","hp_field","honeypot","hp_text","botcheck","bot_field","trap_field","company"
-];
+const DEFAULT_HONEYPOT_FIELDS = ["hp_email","hp_name","hp_field","honeypot","hp_text","botcheck","bot_field","trap_field","company"];
 const HONEYPOT_BLOCK_TTL_SECONDS = 86400; // 24h
 
-// Minimal built-in site KB (BM25-ish fallback for obvious “website” Qs)
-const WEBSITE_KB = buildWebsiteKb();
-const STOP_WORDS = {
-  en: new Set("a,about,an,and,are,as,at,be,by,for,from,how,in,is,it,of,on,or,our,that,the,their,to,we,what,when".split(",")),
-  es: new Set("a,al,como,con,de,del,el,ella,ellas,ellos,en,es,esta,este,las,los,para,por,que,se,son,su,sus,un,una,y".split(","))
-};
-const AVG_DOC_LENGTH = WEBSITE_KB.reduce((s,d)=>s+d.content.split(/\s+/).length,0)/(WEBSITE_KB.length||1);
-
+/* ---------- Governance ---------- */
 const SYSTEM_PROMPT =
   "You are Chattia, an empathetic, security-aware assistant that communicates with clarity and inclusive language. " +
   "Deliver concise, actionable answers aligned with OPS Core CyberSec governance. Provide step-by-step help when useful, " +
@@ -28,26 +19,56 @@ const SYSTEM_PROMPT =
 
 const WARNING_MESSAGE   = "Apologies, but I cannot execute that request, do you have any questions about our website?";
 const TERMINATE_MESSAGE = "Apologies, but I must not continue with this chat and I must end this session.";
-
 const MALICIOUS_PATTERNS = [/<[^>]*>/i,/script/i,/malicious/i,/attack/i,/ignore/i,/prompt/i,/hack/i,/drop\s+table/i];
 const WEBSITE_KEYWORDS   = ["website","site","chattia","product","service","support","order","account","pricing","contact","help"];
+
+/* ---------- Minimal BM25-ish website KB ---------- */
+const WEBSITE_KB = buildWebsiteKb();
+const STOP_WORDS = {
+  en: new Set("a,about,an,and,are,as,at,be,by,for,from,how,in,is,it,of,on,or,our,that,the,their,to,we,what,when,with,can".split(",")),
+  es: new Set("a,al,como,con,de,del,el,ella,ellas,ellos,en,es,esta,este,las,los,para,por,que,se,son,su,sus,un,una,y,puede".split(","))
+};
+const AVG_DOC_LENGTH = WEBSITE_KB.reduce((s,d)=>s+d.content.split(/\s+/).length,0)/(WEBSITE_KB.length||1);
+
+/* ======================================================================= */
 
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     const method = request.method.toUpperCase();
 
-    if ((url.pathname.startsWith("/auth/") || url.pathname.startsWith("/health/") || url.pathname.startsWith("/fallback/")) && m === "OPTIONS") {
+    // Preflight for auth/health/fallback paths
+    if ((url.pathname.startsWith("/auth/") || url.pathname.startsWith("/health/") || url.pathname.startsWith("/fallback/")) && method === "OPTIONS") {
       return applySecurityHeaders(new Response(null, { status: 204 }), request, env);
     }
 
-    // CORS preflight
+    // CORS preflight for /api/*
     if (url.pathname.startsWith("/api/") && method === "OPTIONS") {
       return applySecurityHeaders(new Response(null,{status:204}), request, env);
     }
 
-    // Root or non-API (pass-through or OK)
-    if (url.pathname === "/" || !url.pathname.startsWith("/api/")) {
+    // Health probes
+    if (url.pathname === "/health" || url.pathname === "/health/ok") {
+      return applySecurityHeaders(json({ ok:true }), request, env);
+    }
+    if (url.pathname === "/health/origin") {
+      const origin = request.headers.get("Origin") || "";
+      const allowed = getAllowedOrigin(origin, env);
+      return applySecurityHeaders(json({ ok:true, reqOrigin: origin, allowedNow: Boolean(allowed) }), request, env);
+    }
+    if (url.pathname === "/health/summary") {
+      const ttl = getSignatureTtl(env);
+      return applySecurityHeaders(json({
+        ok:true,
+        signature_ttl: ttl,
+        gateway: resolveIntegrityGateway(env),
+        protocols: resolveIntegrityProtocols(env),
+        allowed_origins: buildAllowedOrigins(env)
+      }), request, env);
+    }
+
+    // Root or non-API (just OK)
+    if (url.pathname === "/" || !url.pathname.startsWith("/api/") && !url.pathname.startsWith("/auth/") && !url.pathname.startsWith("/fallback/")) {
       return applySecurityHeaders(new Response("OK",{status:200}), request, env);
     }
 
@@ -72,15 +93,30 @@ export default {
       return applySecurityHeaders(out, request, env);
     }
 
+    // Client-side fallback escalation telemetry
+    if (url.pathname === "/fallback/escalate") {
+      if (method !== "POST") return applySecurityHeaders(json({ error: "method_not_allowed" }, 405), request, env);
+      const gate = enforceIntegrityHeadersOnly(request, env);
+      if (gate) return applySecurityHeaders(gate, request, env);
+      let payload = {};
+      try { payload = await request.json(); }
+      catch { return applySecurityHeaders(json({ error: "Invalid JSON" }, 400), request, env); }
+      await forwardEscalation({
+        ...payload,
+        gateway: "ops-integrity-gateway",
+        timestamp: payload.timestamp || new Date().toISOString()
+      }, env).catch(()=>{});
+      return applySecurityHeaders(json({ escalated:true }), request, env);
+    }
+
     return applySecurityHeaders(json({error:"not_found"},404), request, env);
   }
 };
 
-/* ------------------------- AUTH: /auth/issue ------------------------- */
+/* =========================== AUTH: /auth/issue =========================== */
 async function handleAuthIssue(request, env) {
   const headerGate = enforceIntegrityHeadersOnly(request, env);
   if (headerGate) return headerGate;
-
   if (!env.SHARED_KEY) return json({error:"Signature service unavailable"},500);
 
   let payload;
@@ -131,8 +167,11 @@ async function handleAuthIssue(request, env) {
   });
 }
 
-/* ---------------------------- CHAT: /api/chat ---------------------------- */
+/* ============================ CHAT: /api/chat ============================ */
 async function handleChatRequest(request, env) {
+  const honeypotBan = await checkHoneypotBan(request, env);
+  if (honeypotBan?.blocked) return honeypotBlockedResponse(honeypotBan.reason, honeypotBan.until);
+
   const gate = await enforceIntegrity(request, env, "/api/chat");
   if (gate) return gate;
 
@@ -164,7 +203,7 @@ async function handleChatRequest(request, env) {
 
     const preparedMessages = ensureGovernancePrompts(sanitized);
 
-    // Quick website-KB route first
+    // Quick website KB route for default/fallback friendliness
     const lastUser = [...sanitized].reverse().find(m => m.role === "user")?.content || "";
     const kb = routeWebsiteDefaultFlow(lastUser);
     if (kb) return buildKnowledgeResponse(kb, env);
@@ -203,7 +242,7 @@ async function handleChatRequest(request, env) {
       reply: trimmed,
       model,
       usage: ai?.usage ?? null,
-      confidence: conf.level,
+      confidence: conf.level,                 // "high" | "medium" | "low"
       confidence_reasons: conf.reasons,
       escalated
     }), {
@@ -225,8 +264,11 @@ async function handleChatRequest(request, env) {
   }
 }
 
-/* ----------------------------- STT: /api/stt ----------------------------- */
+/* ============================= STT: /api/stt ============================= */
 async function handleSttRequest(request, env) {
+  const honeypotBan = await checkHoneypotBan(request, env);
+  if (honeypotBan?.blocked) return honeypotBlockedResponse(honeypotBan.reason, honeypotBan.until);
+
   const gate = await enforceIntegrity(request, env, "/api/stt");
   if (gate) return gate;
 
@@ -242,87 +284,48 @@ async function handleSttRequest(request, env) {
       return honeypotBlockedResponse(hp.reason);
     }
 
-    if (url.pathname === "/fallback/escalate") {
-      if (m !== "POST") {
-        return applySecurityHeaders(json({ error: "method_not_allowed" }, 405), request, env);
+    const token = extractTurnstileToken(form);
+    const turnstileGate = await enforceTurnstile(token, request, env);
+    if (turnstileGate) return turnstileGate;
+
+    const audio = form.get("audio");
+    if (!(audio instanceof File)) return json({error:"Audio blob missing"},400);
+
+    const maxBytes = clampInt(env.MAX_AUDIO_BYTES, 8_000_000);
+    if (audio.size > maxBytes) return json({error:"Audio payload exceeds limit"},413);
+
+    const buf = await audio.arrayBuffer();
+    const bytes = new Uint8Array(buf);
+    const locale = sanitizeLocale(String(form.get("lang") || ""));
+    const prefer = String(form.get("prefer") || "").trim().toLowerCase();
+    const model = selectSttModel(env, prefer);
+
+    const aiResponse = await env.AI.run(model, { audio: [...bytes], language: locale });
+    const transcript = extractTranscript(aiResponse);
+    const clean = sanitizeText(transcript);
+    const transcriptDigest = await sha512B64(clean);
+    const gw = resolveIntegrityGateway(env);
+    const protos = resolveIntegrityProtocols(env);
+
+    return new Response(JSON.stringify({ text: clean }), {
+      status: 200,
+      headers: {
+        "content-type": "application/json; charset=UTF-8",
+        "cache-control": "no-store",
+        "x-tier": aiResponse?.tier || "?",
+        "x-model": model,
+        "x-transcript-digest-sha512": transcriptDigest,
+        "x-integrity-gateway": gw,
+        "x-integrity-protocols": protos
       }
+    });
 
-      const gate = enforceIntegrityHeadersOnly(request, env);
-      if (gate) return applySecurityHeaders(gate, request, env);
-
-      let payload = {};
-      try { payload = await request.json(); }
-      catch { return applySecurityHeaders(json({ error: "Invalid JSON" }, 400), request, env); }
-
-      const reason = typeof payload.reason === "string" && payload.reason.trim() ? payload.reason.trim() : "unspecified";
-      const confidence = typeof payload.confidence === "number" ? payload.confidence : null;
-      const meta = {
-        reason,
-        confidence,
-        lang: typeof payload.lang === "string" ? payload.lang : undefined,
-        userText: typeof payload.userText === "string" ? payload.userText : undefined,
-        fallback: typeof payload.fallback === "string" ? payload.fallback : undefined,
-        timestamp: payload.timestamp || new Date().toISOString(),
-        conversationTail: Array.isArray(payload.conversationTail) ? payload.conversationTail : undefined
-      };
-
-      forwardEscalation(meta, env).catch(()=>{});
-
-      return applySecurityHeaders(json({ escalated: true, reason, confidence }), request, env);
-    }
-
-    return applySecurityHeaders(json({ error: "not_found" }, 404), request, env);
+  } catch {
+    return json({error:"Failed to transcribe audio"},500);
   }
 }
 
-/* --------------------------- Integrity helpers --------------------------- */
-
-function enforceIntegrityHeadersOnly(request, env) {
-  if (env.INTEGRITY_REQUIRED !== "true") return null;
-  const allowed = buildAllowedOrigins(env);
-  const provided = request.headers.get("x-integrity");
-  const gateway  = request.headers.get("x-integrity-gateway");
-  const expected = resolveIntegrityGateway(env);
-
-  if (!provided || !allowed.includes(provided.trim().toLowerCase())) return json({error:"Integrity validation failed"},403);
-  if (gateway !== expected) return json({error:"Integrity gateway mismatch"},412);
-  return null;
-}
-
-async function enforceIntegrity(request, env, expectedPath) {
-  const headerGate = enforceIntegrityHeadersOnly(request, env);
-  if (headerGate) return headerGate;
-
-  if (env.INTEGRITY_REQUIRED !== "true") return null;
-
-  const sig   = request.headers.get("x-request-signature") || request.headers.get("x-ops-signature");
-  const tsH   = request.headers.get("x-request-timestamp") || request.headers.get("x-ops-timestamp");
-  const nonce = request.headers.get("x-request-nonce")      || request.headers.get("x-ops-nonce");
-  if (!sig || !tsH || !nonce) return json({error:"missing_sig_headers"},400);
-
-  const ts = Number(tsH);
-  const ttl = getSignatureTtl(env);
-  const now = Math.floor(Date.now()/1000);
-  if (!Number.isFinite(ts)) return json({error:"bad_timestamp"},400);
-  if (ts > now + 5 || now - ts > ttl) return json({error:"expired"},400);
-
-  if (env.OPS_NONCE_KV) {
-    const usedKey = `used:${nonce}:${ts}`;
-    const seen = await env.OPS_NONCE_KV.get(usedKey);
-    if (seen) return json({error:"replay"},409);
-    await env.OPS_NONCE_KV.put(usedKey,"1",{expirationTtl:ttl});
-  }
-
-  const bodyHex = await sha256HexOfRequest(request);
-  const canonical = `${ts}.${nonce}.POST.${expectedPath}.${bodyHex}`;
-  const expectedSig = await hmacSha512B64(env.SHARED_KEY, canonical);
-  if (expectedSig !== sig) return json({error:"bad_signature"},403);
-
-  return null;
-}
-
-/* ------------------------------ Escalation ------------------------------- */
-
+/* ============================ Escalation (L7) ============================ */
 async function escalateHighConfidenceChat({ body, sanitizedMessages, request, env }) {
   const base = resolveHighConfidenceUrl(env);
   if (!base) return null;
@@ -361,8 +364,15 @@ async function escalateHighConfidenceChat({ body, sanitizedMessages, request, en
   }
 }
 
-/* ------------------------------ Policy + KB ------------------------------ */
+async function forwardEscalation(payload, env) {
+  const hook = (env.ESCALATION_WEBHOOK || "").trim();
+  if (!hook) return;
+  try {
+    await fetch(hook, { method:"POST", headers:{ "content-type":"application/json" }, body: JSON.stringify(payload) });
+  } catch {}
+}
 
+/* ============================ Policy + BM25 ============================ */
 function sanitizeText(s) {
   if (!s) return "";
   return String(s).replace(/[^\x09\x0A\x0D\x20-\x7E\u00A0-\uFFFF]/g,"").replace(/\s+/g," ").trim();
@@ -469,7 +479,7 @@ function buildWebsiteKb(){
       summaryEn:
         "Our pillars: Business Operations, Contact Center, IT Support, and Professionals On-Demand.",
       summaryEs:
-        "Nuestros pilares: Operaciones de Negocio, Contact Center, Soporte IT y Profesionales On-Demand."
+        "Nuestros pilares: Operaciones de Negocio, Contact Center, Soporte TI y Profesionales On-Demand."
     }
   ];
 
@@ -491,7 +501,7 @@ function buildServiceDirectoryDocs(){
       title: `${overview.name} overview`,
       content: overviewContent,
       summaryEn: "OPS Remote Professional Network unites remote pods for Business Operations, Contact Center, IT Support, and Professionals on demand.",
-      summaryEs: "La Red de Profesionales Remotos OPS reúne pods remotos para Operaciones de Negocio, Contact Center, Soporte TI y especialistas bajo demanda."
+      summaryEs: "La Red de Profesionales Remotos OPS reúne pods remotos para Operaciones, Contact Center, Soporte TI y especialistas bajo demanda."
     });
   }
 
@@ -526,7 +536,7 @@ function buildServiceDirectoryDocs(){
       title: "Talent network highlights",
       content: `Applicants emphasize ${talentLines.join("; ")}. Community commitments: ${commitments.join("; ")}.`,
       summaryEn: "OPS talent applicants share crafts, skills, education, continued learning, and guild interests across Business Operations, Contact Center, IT Support, Professionals, Analytics & Insights.",
-      summaryEs: "Los postulantes a la red OPS comparten oficios, habilidades, estudios, aprendizaje continuo e intereses en Operaciones, Contact Center, Soporte TI, Profesionales y Analítica."
+      summaryEs: "Los postulantes comparten oficios, habilidades, estudios, aprendizaje continuo e intereses en Operaciones, Contact Center, Soporte TI, Profesionales y Analítica."
     });
   }
 
@@ -553,67 +563,18 @@ function translatePillarSummary(name, fallback){
   };
   return dict[name] || fallback;
 }
-
 function translateSolutionSummary(name, fallback){
   const dict = {
     "Business Operations": "Cobertura de facturación, cuentas por pagar/cobrar, coordinación de proveedores, soporte administrativo y marketing.",
-    "Contact Center (Beta)": "CX multicanal orientado a relaciones con soporte de resolución rápida y lealtad.",
-    "IT Support (Beta)": "Soporte TI integral con mesa de ayuda, tickets, manejo de incidentes y pistas especializadas.",
-    "Professionals On Demand": "Asistentes y especialistas desplegables para sprints cortos o compromisos prolongados."
+    "Contact Center (Beta)": "CX multicanal orientado a relaciones con resolución rápida.",
+    "IT Support (Beta)": "Soporte TI integral con mesa de ayuda, tickets e incidentes.",
+    "Professionals On Demand": "Asistentes y especialistas desplegables para sprints o compromisos prolongados."
   };
   return dict[name] || fallback;
 }
+function slugifyId(input){ return String(input||"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/(^-|-$)/g,""); }
 
-function slugifyId(input){
-  return String(input||"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/(^-|-$)/g,"");
-}
-
-async function buildKnowledgeResponse(flow, env){
-  const trimmed = String(flow.reply||"").trim();
-  const digest  = await sha512B64(trimmed);
-  const gw = resolveIntegrityGateway(env);
-  const protos = resolveIntegrityProtocols(env);
-  const usage = { source:flow.docId, title:flow.title, language:flow.language, confidence:Number(flow.score.toFixed(4)) };
-
-  return new Response(JSON.stringify({ reply: trimmed, model:"bm25-website-default", usage }), {
-    status:200,
-    headers:{
-      "content-type":"application/json; charset=UTF-8",
-      "cache-control":"no-store",
-      "x-model":"bm25-website-default",
-      "x-reply-digest-sha512": digest,
-      "x-integrity-gateway": gw,
-      "x-integrity-protocols": protos,
-      "x-knowledge-source": flow.docId
-    }
-  });
-}
-
-async function buildGuardedResponse(reply, env){
-  const sanitized = (reply||WARNING_MESSAGE).trim();
-  const digest = await sha512B64(sanitized);
-  const gw = resolveIntegrityGateway(env);
-  const protos = resolveIntegrityProtocols(env);
-  return new Response(JSON.stringify({ reply: sanitized, model: MODEL_ID, usage: null }), {
-    status:200,
-    headers:{
-      "content-type":"application/json; charset=UTF-8",
-      "cache-control":"no-store",
-      "x-model": MODEL_ID,
-      "x-reply-digest-sha512": digest,
-      "x-integrity-gateway": gw,
-      "x-integrity-protocols": protos
-    }
-  });
-}
-
-function selectChatModel(env, metadata){
-  const tier = typeof metadata?.tier === "string" ? metadata.tier.toLowerCase() : "";
-  if (tier==="big"     && env.AI_LLM_BIG)     return env.AI_LLM_BIG;
-  if (tier==="premium" && env.AI_LLM_PREMIUM) return env.AI_LLM_PREMIUM;
-  return env.AI_LLM_DEFAULT || MODEL_ID;
-}
-
+/* ============================ Confidence ============================ */
 function assessConfidence(reply, ai){
   const t = (reply||"").trim();
   if (!t) return {level:"low", reasons:["empty"]};
@@ -630,13 +591,7 @@ function assessConfidence(reply, ai){
   return {level:"medium", reasons:["default"]};
 }
 
-function resolveHighConfidenceUrl(env){
-  const v = (env?.HIGH_CONFIDENCE_LLM_URL || env?.AI_LLM_ESCALATION_URL || "").trim();
-  return v || DEFAULT_HIGH_CONFIDENCE_URL;
-}
-
-/* ------------------------------- Security -------------------------------- */
-
+/* ============================== Security ============================== */
 function applySecurityHeaders(resp, req, env){
   const h = new Headers(resp.headers);
 
@@ -650,7 +605,7 @@ function applySecurityHeaders(resp, req, env){
 
   h.set("Access-Control-Allow-Methods","POST, OPTIONS");
   h.set("Access-Control-Allow-Headers",
-    "Content-Type, X-Integrity, X-Integrity-Gateway, X-Integrity-Protocols, X-Request-Signature, X-Request-Timestamp, X-Request-Nonce, X-OPS-Signature, X-OPS-Timestamp, X-OPS-Nonce"
+    "Content-Type, X-Integrity, X-Integrity-Gateway, X-Integrity-Protocols, X-Request-Signature, X-Request-Timestamp, X-Request-Nonce, X-OPS-Signature, X-OPS-Timestamp, X-OPS-Nonce, CF-Turnstile-Response, X-Turnstile-Token"
   );
   h.set("Access-Control-Max-Age","600");
 
@@ -674,14 +629,8 @@ function applySecurityHeaders(resp, req, env){
   return new Response(resp.body, { status: resp.status, statusText: resp.statusText, headers: h });
 }
 
-function resolveIntegrityGateway(env){
-  const c = (env.INTEGRITY_GATEWAY||"").trim();
-  return c || DEFAULT_INTEGRITY_GATEWAY;
-}
-function resolveIntegrityProtocols(env){
-  const c = (env.INTEGRITY_PROTOCOLS||"").trim();
-  return c || DEFAULT_INTEGRITY_PROTOCOLS;
-}
+function resolveIntegrityGateway(env){ const c = (env.INTEGRITY_GATEWAY||"").trim(); return c || DEFAULT_INTEGRITY_GATEWAY; }
+function resolveIntegrityProtocols(env){ const c = (env.INTEGRITY_PROTOCOLS||"").trim(); return c || DEFAULT_INTEGRITY_PROTOCOLS; }
 
 function getAllowedOrigin(origin, env){
   if (!origin) return null;
@@ -710,8 +659,7 @@ function isWorkersDev(o){ try { return new URL(o).hostname.endsWith(".workers.de
 function isDash(o){       try { return new URL(o).hostname.endsWith(".dash.cloudflare.com"); } catch { return false; } }
 function mergeVary(ex,v){ if(!ex) return v; const S=new Set(ex.split(",").map(s=>s.trim()).filter(Boolean)); S.add(v); return Array.from(S).join(", "); }
 
-/* ------------------------------- Crypto ---------------------------------- */
-
+/* =============================== Crypto =============================== */
 async function sha256HexOfRequest(req){
   const buf = await req.arrayBuffer();
   const hash = await crypto.subtle.digest("SHA-256", buf);
@@ -734,24 +682,13 @@ function b64(buf){
   return btoa(bin);
 }
 
-/* ------------------------------- JSON ------------------------------------ */
+/* ================================ JSON ================================ */
 function json(obj,status=200,extra){
   const h = {"content-type":"application/json; charset=UTF-8", ...(extra||{})};
   return new Response(JSON.stringify(obj), {status, headers:h});
 }
 
-/* ------------------------------- STT util -------------------------------- */
-function extractTranscript(res){
-  if (!res) return "";
-  if (typeof res === "string") return res;
-  if (typeof res.text === "string") return res.text;
-  if (Array.isArray(res.results) && res.results[0]?.text) return res.results[0].text;
-  if (typeof res.output_text === "string") return res.output_text;
-  return "";
-}
-
-/* ------------------------- Honeypot (KV-based) --------------------------- */
-
+/* ========================== Honeypot / KV =========================== */
 async function checkHoneypotBan(request, env){
   const kv = env.OPS_BANLIST_KV || env.OPS_NONCE_KV;
   if (!kv) return null;
@@ -856,7 +793,7 @@ function getClientIp(req){
          (h.get("x-real-ip")||"").trim() || null;
 }
 
-/* ----------------------------- Turnstile --------------------------------- */
+/* ============================ Turnstile ============================ */
 function extractTurnstileToken(source){
   const keys = ["cf-turnstile-response","turnstile_response","turnstile-token","turnstile_token","turnstileResponse","turnstileToken","turnstile"];
   if (!source) return null;
@@ -872,7 +809,7 @@ function extractTurnstileToken(source){
 }
 async function enforceTurnstile(token, request, env){
   const secret = (env?.TURNSTILE_SECRET||"").trim();
-  if (!secret) return null;
+  if (!secret) return null; // not required unless configured
   let resolved = typeof token==="string" ? token.trim() : "";
   if (!resolved){
     const h = request.headers.get("cf-turnstile-response") || request.headers.get("x-turnstile-token");
@@ -903,16 +840,47 @@ async function enforceTurnstile(token, request, env){
   }
 }
 
-async function forwardEscalation(payload, env) {
-  const hook = (env.ESCALATION_WEBHOOK || "").trim();
-  if (!hook) return;
-  try {
-    await fetch(hook, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ ...payload, gateway: "withered-mouse-9aee" })
-    });
-  } catch (err) {
-    console.error("escalation_forward_failed", err);
+/* ============================ Models / Limits ============================ */
+function selectChatModel(env, metadata){
+  const tier = typeof metadata?.tier === "string" ? metadata.tier.toLowerCase() : "";
+  if (tier==="big"     && env.AI_LLM_BIG)     return env.AI_LLM_BIG;
+  if (tier==="premium" && env.AI_LLM_PREMIUM) return env.AI_LLM_PREMIUM;
+  return env.AI_LLM_DEFAULT || MODEL_ID;
+}
+function selectSttModel(env, prefer){
+  const fallback =
+    env.AI_STT_TURBO ||
+    env.AI_STT_BASE  ||
+    env.AI_STT_TINY  ||
+    env.AI_STT_VENDOR||
+    "@cf/openai/whisper";
+
+  switch (prefer) {
+    case "tiny":   return env.AI_STT_TINY   || fallback;
+    case "base":   return env.AI_STT_BASE   || fallback;
+    case "turbo":  return env.AI_STT_TURBO  || fallback;
+    case "vendor": return env.AI_STT_VENDOR || fallback;
+    default:       return fallback;
   }
+}
+function getSignatureTtl(env){
+  const fallback = 300;
+  const v = env.SIG_TTL_SECONDS ? Number(env.SIG_TTL_SECONDS) : NaN;
+  if (!Number.isFinite(v) || v <= 0) return fallback;
+  return Math.max(60, Math.min(900, Math.floor(v)));
+}
+function getMaxTokens(env){
+  const v = env.LLM_MAX_TOKENS ? Number(env.LLM_MAX_TOKENS) : NaN;
+  if (!Number.isFinite(v) || v <= 0) return 768;
+  return Math.min(1024, v);
+}
+
+/* ============================== Transcript ============================== */
+function extractTranscript(res){
+  if (!res) return "";
+  if (typeof res === "string") return res;
+  if (typeof res.text === "string") return res.text;
+  if (Array.isArray(res.results) && res.results[0]?.text) return res.results[0].text;
+  if (typeof res.output_text === "string") return res.output_text;
+  return "";
 }
