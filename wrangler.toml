@@ -52,7 +52,7 @@ INTEGRITY_REQUIRED   = "true"
 INTEGRITY_GATEWAY    = "https://withered-mouse-9aee.grabem-holdem-nuts-right.workers.dev"
 INTEGRITY_PROTOCOLS  = "CORS,CSP,OPS-CySec-Core,CISA,NIST,PCI-DSS,SHA-384,SHA-512"
 SIG_TTL_SECONDS      = "300"
-LLM_MAX_TOKENS       = "768"
+LLM_MAX_TOKENS       = "500"
 ALLOW_WORKERS_DEV    = "true"
 ALLOW_DASH           = "false"
 
