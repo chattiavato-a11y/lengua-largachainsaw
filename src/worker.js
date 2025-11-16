@@ -1,5 +1,5 @@
 // src/worker.js  — Integrity Gateway (withered-mouse-9aee…workers.dev)
-// Endpoints:  POST /auth/issue   |  GET /health, /health/origin
+// Endpoints:  POST /auth/issue   |  GET /health, /health/origin, /health/summary
 // Verifies X-Integrity headers, mints detached HMAC-SHA512 signatures, strict CORS.
 
 const BASE_ALLOWED_ORIGINS = [
@@ -26,6 +26,20 @@ export default {
       const origin = request.headers.get("Origin") || "";
       const allowed = getAllowedOrigin(origin, env);
       return applySecurityHeaders(json({ reqOrigin: origin, allowedNow: Boolean(allowed) }), request, env);
+    }
+
+    if (url.pathname === "/health/summary") {
+      const payload = {
+        ok: true,
+        ts: Math.floor(Date.now()/1000),
+        signature_ttl: getSignatureTtl(env),
+        integrity_gateway: resolveIntegrityGateway(env),
+        integrity_protocols: resolveIntegrityProtocols(env),
+        integrity_required: env.INTEGRITY_REQUIRED === "true",
+        allowed_origins: buildAllowedOrigins(env),
+        nonce_kv_bound: Boolean(env.OPS_NONCE_KV)
+      };
+      return applySecurityHeaders(json(payload, 200, { "cache-control": "no-store" }), request, env);
     }
 
     if (url.pathname === "/auth/issue") {
