@@ -14,7 +14,7 @@ export default {
     const url = new URL(request.url);
     const m   = request.method.toUpperCase();
 
-    if ((url.pathname.startsWith("/auth/") || url.pathname.startsWith("/health/")) && m === "OPTIONS") {
+    if ((url.pathname.startsWith("/auth/") || url.pathname.startsWith("/health/") || url.pathname.startsWith("/fallback/")) && m === "OPTIONS") {
       return applySecurityHeaders(new Response(null, { status: 204 }), request, env);
     }
 
@@ -80,6 +80,35 @@ export default {
         "cache-control": "no-store",
         "x-signature-ttl": String(ttl)
       }), request, env);
+    }
+
+    if (url.pathname === "/fallback/escalate") {
+      if (m !== "POST") {
+        return applySecurityHeaders(json({ error: "method_not_allowed" }, 405), request, env);
+      }
+
+      const gate = enforceIntegrityHeadersOnly(request, env);
+      if (gate) return applySecurityHeaders(gate, request, env);
+
+      let payload = {};
+      try { payload = await request.json(); }
+      catch { return applySecurityHeaders(json({ error: "Invalid JSON" }, 400), request, env); }
+
+      const reason = typeof payload.reason === "string" && payload.reason.trim() ? payload.reason.trim() : "unspecified";
+      const confidence = typeof payload.confidence === "number" ? payload.confidence : null;
+      const meta = {
+        reason,
+        confidence,
+        lang: typeof payload.lang === "string" ? payload.lang : undefined,
+        userText: typeof payload.userText === "string" ? payload.userText : undefined,
+        fallback: typeof payload.fallback === "string" ? payload.fallback : undefined,
+        timestamp: payload.timestamp || new Date().toISOString(),
+        conversationTail: Array.isArray(payload.conversationTail) ? payload.conversationTail : undefined
+      };
+
+      forwardEscalation(meta, env).catch(()=>{});
+
+      return applySecurityHeaders(json({ escalated: true, reason, confidence }), request, env);
     }
 
     return applySecurityHeaders(json({ error: "not_found" }, 404), request, env);
@@ -197,4 +226,18 @@ function getSignatureTtl(env) {
   const n = Number(env.SIG_TTL_SECONDS || "");
   if (!Number.isFinite(n) || n <= 0) return fallback;
   return Math.max(60, Math.min(900, Math.floor(n)));
+}
+
+async function forwardEscalation(payload, env) {
+  const hook = (env.ESCALATION_WEBHOOK || "").trim();
+  if (!hook) return;
+  try {
+    await fetch(hook, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ...payload, gateway: "withered-mouse-9aee" })
+    });
+  } catch (err) {
+    console.error("escalation_forward_failed", err);
+  }
 }
