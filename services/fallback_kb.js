@@ -9,7 +9,8 @@
   const SERVICE_DIRECTORY = Object.freeze({
     overview: {
       name: "OPS Remote Professional Network",
-      focus: "Remote professionals delivering business operations, contact center, IT support, and specialists on demand."
+      focus: "Remote professionals delivering business operations, contact center, IT support, and specialists on demand.",
+      focusEs: "Profesionales remotos que ofrecen operaciones de negocio, contact center, soporte de TI y especialistas bajo demanda."
     },
     servicePillars: [
       { name: "Business Operations", summary: "Playbooks that preserve the financial hygiene, billing accuracy, procurement visibility, stakeholder updates, and executive dashboards." },
@@ -18,10 +19,26 @@
       { name: "Professionals", summary: "Insight teams providing predictive analytics, feedback frameworks, and growth-focused engagement models." }
     ],
     solutions: [
-      { name: "Business Operations", coverage: "Billing, payables/receivables, vendor coordination, administrative support, marketing, and digital marketing assistance." },
-      { name: "Contact Center (Beta)", coverage: "Multi-channel, relationship-driven CX with rapid-resolution support and loyalty-oriented engagement." },
-      { name: "IT Support (Beta)", coverage: "End-to-end IT support with practical help desk coverage, ticketing, incident handling, and specialized support tracks." },
-      { name: "Professionals On Demand", coverage: "Deployable assistants, specialists, and consultants for short-term sprints or long-term engagements." }
+      {
+        name: "Business Operations",
+        coverage: "Billing, payables/receivables, vendor coordination, administrative support, marketing, and digital marketing assistance.",
+        coverageEs: "Facturación, cuentas por pagar/cobrar, coordinación con proveedores, soporte administrativo, marketing y acompañamiento en marketing digital."
+      },
+      {
+        name: "Contact Center (Beta)",
+        coverage: "Multi-channel, relationship-driven CX with rapid-resolution support and loyalty-oriented engagement.",
+        coverageEs: "CX multicanal centrado en la relación con soporte de resolución rápida y engagement orientado a la lealtad."
+      },
+      {
+        name: "IT Support (Beta)",
+        coverage: "End-to-end IT support with practical help desk coverage, ticketing, incident handling, and specialized support tracks.",
+        coverageEs: "Soporte TI de punta a punta con cobertura de mesa de ayuda, ticketing, manejo de incidentes y rutas de soporte especializado."
+      },
+      {
+        name: "Professionals On Demand",
+        coverage: "Deployable assistants, specialists, and consultants for short-term sprints or long-term engagements.",
+        coverageEs: "Asistentes, especialistas y consultores desplegables para sprints cortos o compromisos de largo plazo."
+      }
     ],
     proofPoints: [
       "24/7 follow-the-sun pods",
@@ -29,10 +46,21 @@
       "99.95% availability",
       "12× security posture improvements (OPS CyberSec Core aligned)"
     ],
+    proofPointsEs: [
+      "Pods 24/7 follow-the-sun",
+      "Resolución 40% más rápida",
+      "99.95% de disponibilidad",
+      "Mejoras de 12× en la postura de seguridad (alineadas a OPS CyberSec Core)"
+    ],
     contactPathways: [
       "Discovery calls to map operational needs",
       "Direct OPS consultations for integrations and CX roadmaps",
       "Hire remote specialists across operations, CX, IT support, and on-demand talent"
+    ],
+    contactPathwaysEs: [
+      "Discovery calls para mapear necesidades operativas",
+      "Consultorías directas con OPS para integraciones y roadmaps de CX",
+      "Contrata especialistas remotos en operaciones, CX, soporte TI y talento on-demand"
     ]
   });
 
@@ -63,11 +91,8 @@
       q: /(what\s+is|who\s+are|about|overview|summary|intro|explain)\b|^ops\b|^chattia\b/i,
       a: () => `${SERVICE_DIRECTORY.overview.name} — ${SERVICE_DIRECTORY.overview.focus}
 Pillars:
-• ${SERVICE_DIRECTORY.servicePillars[0].name} — ${SERVICE_DIRECTORY.servicePillars[0].summary}
-• ${SERVICE_DIRECTORY.servicePillars[1].name} — ${SERVICE_DIRECTORY.servicePillars[1].summary}
-• ${SERVICE_DIRECTORY.servicePillars[2].name} — ${SERVICE_DIRECTORY.servicePillars[2].summary}
-• ${SERVICE_DIRECTORY.servicePillars[3].name} — ${SERVICE_DIRECTORY.servicePillars[3].summary}
-Proof points: ${SERVICE_DIRECTORY.proofPoints.join("; ")}.`
+• ${getPillars("en").join("\n• ")}
+Proof points: ${getProofPoints("en").join("; ")}.`
     },
     {
       id:"overview.es", lang:"es",
@@ -137,8 +162,8 @@ Cuéntanos tu contexto y horarios; respondemos dentro de un día hábil.` }
     const bank = KB.filter(k=>k.lang===lang);
     for (const item of bank){ if (item.q.test(text)) return item.a(); }
     return (lang==='es')
-      ? `${SERVICE_DIRECTORY.overview.name} — ${SERVICE_DIRECTORY.overview.focus}`
-      : `${SERVICE_DIRECTORY.overview.name} — ${SERVICE_DIRECTORY.overview.focus}`;
+      ? `${SERVICE_DIRECTORY.overview.name} — ${getFocus('es')}`
+      : `${SERVICE_DIRECTORY.overview.name} — ${getFocus('en')}`;
   }
 
   window.FallbackKB = { reply };

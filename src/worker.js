@@ -188,25 +188,32 @@ async function handleChatRequest(request, env) {
     const turnstileGate  = await enforceTurnstile(turnstileToken, request, env);
     if (turnstileGate) return turnstileGate;
 
-    const { messages = [], metadata } = body;
+    const rawMetadata = body && typeof body === "object" ? body.metadata : undefined;
+    const metadata = (rawMetadata && typeof rawMetadata === "object") ? { ...rawMetadata } : {};
+    body.metadata = metadata;
+
+    const { messages = [] } = body;
     const normalized = Array.isArray(messages)
       ? messages.filter(m => m && typeof m.content === "string" && m.content.trim())
       : [];
 
+    const preferredLocale = detectPreferredLocale(normalized, metadata);
+    if (!metadata.locale) metadata.locale = preferredLocale;
+
     const pol = evaluatePolicy(normalized);
-    if (pol.blocked) return buildGuardedResponse(pol.reply, env);
+    if (pol.blocked) return await buildGuardedResponse(pol.reply, env);
 
     const sanitized = normalized.map(m => m.role === "user"
       ? ({...m, content: sanitizeText(m.content)})
       : m
     );
 
-    const preparedMessages = ensureGovernancePrompts(sanitized);
+    const preparedMessages = ensureGovernancePrompts(sanitized, metadata.locale);
 
     // Quick website KB route for default/fallback friendliness
     const lastUser = [...sanitized].reverse().find(m => m.role === "user")?.content || "";
     const kb = routeWebsiteDefaultFlow(lastUser);
-    if (kb) return buildKnowledgeResponse(kb, env);
+    if (kb) return await buildKnowledgeResponse(kb, env, metadata.locale);
 
     // Primary model
     let model = selectChatModel(env, metadata);
@@ -215,10 +222,10 @@ async function handleChatRequest(request, env) {
     let reply =
       (typeof ai === "string" && ai) ||
       ai?.response || ai?.result || ai?.output_text ||
-      "I’m unable to respond right now.";
+      getDefaultReply(metadata.locale);
 
     let trimmed = String(reply).trim();
-    let conf = assessConfidence(trimmed, ai);
+    let conf = assessConfidence(trimmed, ai, metadata.locale);
     let escalated = Boolean(metadata?.escalated);
 
     // Escalate on low confidence
@@ -394,13 +401,25 @@ function evaluatePolicy(messages) {
   const onTopic  = WEBSITE_KEYWORDS.some(k=>lower.includes(k));
   if (!looksBad && onTopic) return {blocked:false};
 
-  const guardCount = messages.filter(m=>m.role==="assistant" && (m.content.includes(WARNING_MESSAGE)||m.content.includes(TERMINATE_MESSAGE))).length;
-  if (guardCount>=1) return {blocked:true, reply:TERMINATE_MESSAGE};
-  return {blocked:true, reply:WARNING_MESSAGE};
+  const langPreference = detectLanguage(last);
+  const warning = WARNING_MESSAGES[langPreference] || WARNING_MESSAGES.en;
+  const terminate = TERMINATE_MESSAGES[langPreference] || TERMINATE_MESSAGES.en;
+
+  const guardCount = messages.filter(m=>m.role==="assistant" && ALL_GUARD_MESSAGES.some(msg => m.content.includes(msg))).length;
+  if (guardCount>=1) return {blocked:true, reply:terminate};
+  return {blocked:true, reply:warning};
 }
 
 function tokenize(s){ return s.toLowerCase().split(/[^a-záéíóúñü0-9]+/).filter(Boolean); }
-function detectLanguage(s){ return /[áéíóúñü]/i.test(s) ? "es" : "en"; }
+function detectLanguage(s){
+  if (!s) return "en";
+  if (/[áéíóúñü¿¡]/i.test(s)) return "es";
+  const lower = s.toLowerCase();
+  const esHints = /(hola|buen[oa]s|gracias|por favor|necesito|operaciones|contacto|contratar|soporte|centro|llamar|consulta|ayuda|descubrimiento)/i.test(lower);
+  const enHints = /(hello|hi|please|thanks|support|contact|pricing|order|help|operations|book)/i.test(lower);
+  if (esHints && !enHints) return "es";
+  return "en";
+}
 function computeIdf(term){
   const N = WEBSITE_KB.length || 1;
   const df = WEBSITE_KB.reduce((c,d)=>c + (d.content.toLowerCase().includes(term)?1:0),0) || 1;
@@ -439,22 +458,107 @@ function routeWebsiteDefaultFlow(usr){
   return { type:"kb", reply, docId:best.doc.id, title:best.doc.title, language:lang, score:best.score };
 }
 
-function ensureGovernancePrompts(messages){
+async function buildKnowledgeResponse(kb, env, locale){
+  const reply = (kb?.reply || "").trim();
+  const language = (locale === "es" || kb?.language === "es") ? "es" : "en";
+  const digest = await sha512B64(reply);
+  const gw = resolveIntegrityGateway(env);
+  const protos = resolveIntegrityProtocols(env);
+  return new Response(JSON.stringify({
+    reply,
+    model: "kb",
+    knowledge_id: kb?.docId || null,
+    confidence: "high",
+    confidence_reasons: ["website_kb"],
+    escalated: false,
+    language
+  }), {
+    status:200,
+    headers:{
+      "content-type":"application/json; charset=UTF-8",
+      "cache-control":"no-store",
+      "x-model":"kb",
+      "x-reply-digest-sha512": digest,
+      "x-knowledge-id": kb?.docId || "",
+      "x-integrity-gateway": gw,
+      "x-integrity-protocols": protos,
+      "x-confidence-level":"high",
+      "x-confidence-reasons":"website_kb"
+    }
+  });
+}
+
+async function buildGuardedResponse(message, env){
+  const reply = (message || WARNING_MESSAGES.en).trim();
+  const digest = await sha512B64(reply);
+  const gw = resolveIntegrityGateway(env);
+  const protos = resolveIntegrityProtocols(env);
+  return new Response(JSON.stringify({
+    reply,
+    model: "policy",
+    usage: null,
+    confidence: "low",
+    confidence_reasons: ["policy_guard"],
+    escalated: false
+  }), {
+    status:200,
+    headers:{
+      "content-type":"application/json; charset=UTF-8",
+      "cache-control":"no-store",
+      "x-model":"policy",
+      "x-reply-digest-sha512": digest,
+      "x-integrity-gateway": gw,
+      "x-integrity-protocols": protos,
+      "x-confidence-level":"low",
+      "x-confidence-reasons":"policy_guard"
+    }
+  });
+}
+
+function ensureGovernancePrompts(messages, locale){
   const filtered = [];
-  const base = SYSTEM_PROMPT.trim();
-  const directory = SERVICE_DIRECTORY_PROMPT.trim();
+  const directoryPrompt = getDirectoryPrompt(locale);
+  const systemPrompt = getSystemPrompt(locale);
+  const languagePrompt = getLanguagePrompt(locale);
+  const known = new Set([directoryPrompt.trim(), systemPrompt.trim(), languagePrompt.trim()]);
   for (const msg of messages || []){
     if (msg?.role === "system"){
       const content = (msg.content||"").trim();
-      if (content === base || content === directory) continue;
+      if (known.has(content)) continue;
     }
     filtered.push(msg);
   }
   return [
-    {role:"system", content: SERVICE_DIRECTORY_PROMPT},
-    {role:"system", content: SYSTEM_PROMPT},
+    {role:"system", content: directoryPrompt},
+    {role:"system", content: systemPrompt},
+    {role:"system", content: languagePrompt},
     ...filtered
   ];
+}
+
+function getSystemPrompt(locale){
+  return SYSTEM_PROMPTS[locale === "es" ? "es" : "en"];
+}
+function getDirectoryPrompt(locale){
+  return SERVICE_DIRECTORY_PROMPTS[locale === "es" ? "es" : "en"] || SERVICE_DIRECTORY_PROMPTS.en;
+}
+function getLanguagePrompt(locale){
+  return LANGUAGE_PROMPTS[locale === "es" ? "es" : "en"];
+}
+function detectPreferredLocale(messages, metadata){
+  const localeHint = metadata?.locale || metadata?.lang || metadata?.language;
+  const sanitized = sanitizeLocale(localeHint || "");
+  if (sanitized.startsWith("es")) return "es";
+  if (sanitized.startsWith("en")) return "en";
+  const lastUser = [...(messages||[])].reverse().find(m => m && m.role === "user" && m.content);
+  if (lastUser) {
+    const guess = detectLanguage(lastUser.content);
+    if (guess === "es") return "es";
+  }
+  return "en";
+}
+function getDefaultReply(locale){
+  return DEFAULT_FAILURE_REPLIES[locale === "es" ? "es" : "en"];
 }
 
 function buildWebsiteKb(){
@@ -493,59 +597,72 @@ function buildServiceDirectoryDocs(){
   const overview = SERVICE_DIRECTORY.overview;
   const serviceNames = SERVICE_DIRECTORY.servicePillars?.map(p=>p.name).join(", ") || "";
   const solutionNames = SERVICE_DIRECTORY.solutions?.map(s=>s.name).join(", ") || "";
+  const proofPointsEn = SERVICE_DIRECTORY.proofPoints?.join(", ") || "n/a";
+  const proofPointsEs = (SERVICE_DIRECTORY.proofPointsEs || SERVICE_DIRECTORY.proofPoints || []).join(", ") || proofPointsEn;
   if (overview){
-    const overviewContent = `${overview.name} focuses on ${overview.focus}. Service pillars include ${serviceNames}. Solutions cover ${solutionNames}. Operational proof points: ${SERVICE_DIRECTORY.proofPoints?.join(", ") || "n/a"}.`;
-    docs.push({
+    const overviewContentEn = `${overview.name} focuses on ${overview.focus}. Service pillars include ${serviceNames}. Solutions cover ${solutionNames}. Operational proof points: ${proofPointsEn}.`;
+    const overviewContentEs = `${overview.name} se enfoca en ${overview.focusEs || overview.focus}. Los pilares incluyen ${serviceNames}. Las soluciones cubren ${solutionNames}. Pruebas operativas: ${proofPointsEs}.`;
+    pushDocVariants(docs, {
       id: "ops-directory-overview",
-      lang: "en",
-      title: `${overview.name} overview`,
-      content: overviewContent,
+      titleEn: `${overview.name} overview`,
+      titleEs: `Resumen de ${overview.name}`,
+      contentEn: overviewContentEn,
+      contentEs: overviewContentEs,
       summaryEn: "OPS Remote Professional Network unites remote pods for Business Operations, Contact Center, IT Support, and Professionals on demand.",
       summaryEs: "La Red de Profesionales Remotos OPS reúne pods remotos para Operaciones, Contact Center, Soporte TI y especialistas bajo demanda."
     });
   }
 
   for (const pillar of SERVICE_DIRECTORY.servicePillars || []){
-    docs.push({
+    pushDocVariants(docs, {
       id: `pillar-${slugifyId(pillar.name)}`,
-      lang: "en",
-      title: `${pillar.name} pillar`,
-      content: pillar.summary,
+      titleEn: `${pillar.name} pillar`,
+      titleEs: `Pilar ${pillar.name}`,
+      contentEn: pillar.summary,
+      contentEs: pillar.summaryEs || pillar.summary,
       summaryEn: pillar.summary,
-      summaryEs: translatePillarSummary(pillar.name, pillar.summary)
+      summaryEs: pillar.summaryEs || pillar.summary
     });
   }
 
   for (const solution of SERVICE_DIRECTORY.solutions || []){
-    docs.push({
+    pushDocVariants(docs, {
       id: `solution-${slugifyId(solution.name)}`,
-      lang: "en",
-      title: `${solution.name} solution`,
-      content: solution.coverage,
+      titleEn: `${solution.name} solution`,
+      titleEs: `Solución ${solution.name}`,
+      contentEn: solution.coverage,
+      contentEs: solution.coverageEs || solution.coverage,
       summaryEn: solution.coverage,
-      summaryEs: translateSolutionSummary(solution.name, solution.coverage)
+      summaryEs: solution.coverageEs || solution.coverage
     });
   }
 
-  const talentLines = SERVICE_DIRECTORY.talentNetwork?.applicationHighlights || [];
-  const commitments = SERVICE_DIRECTORY.talentNetwork?.commitments || [];
+  const talent = SERVICE_DIRECTORY.talentNetwork || {};
+  const talentLines = talent.applicationHighlights || [];
+  const talentLinesEs = talent.applicationHighlightsEs || talentLines;
+  const commitments = talent.commitments || [];
+  const commitmentsEs = talent.commitmentsEs || commitments;
   if (talentLines.length){
-    docs.push({
+    pushDocVariants(docs, {
       id: "talent-network-highlights",
-      lang: "en",
-      title: "Talent network highlights",
-      content: `Applicants emphasize ${talentLines.join("; ")}. Community commitments: ${commitments.join("; ")}.`,
+      titleEn: "Talent network highlights",
+      titleEs: "Highlights de la red de talento",
+      contentEn: `Applicants emphasize ${talentLines.join("; ")}. Community commitments: ${commitments.join("; ")}.`,
+      contentEs: `Las personas postulantes destacan ${talentLinesEs.join("; ")}. Compromisos comunitarios: ${commitmentsEs.join("; ")}.`,
       summaryEn: "OPS talent applicants share crafts, skills, education, continued learning, and guild interests across Business Operations, Contact Center, IT Support, Professionals, Analytics & Insights.",
       summaryEs: "Los postulantes comparten oficios, habilidades, estudios, aprendizaje continuo e intereses en Operaciones, Contact Center, Soporte TI, Profesionales y Analítica."
     });
   }
 
   if (SERVICE_DIRECTORY.contactPathways?.length){
-    docs.push({
+    const contactEn = SERVICE_DIRECTORY.contactPathways.join("; ");
+    const contactEs = (SERVICE_DIRECTORY.contactPathwaysEs || SERVICE_DIRECTORY.contactPathways).join("; ");
+    pushDocVariants(docs, {
       id: "ops-contact-pathways",
-      lang: "en",
-      title: "OPS contact pathways",
-      content: SERVICE_DIRECTORY.contactPathways.join("; "),
+      titleEn: "OPS contact pathways",
+      titleEs: "Rutas de contacto OPS",
+      contentEn: contactEn,
+      contentEs: contactEs,
       summaryEn: "Contact OPS via discovery calls, direct consultations, or hiring remote specialists across CX, IT, and operations.",
       summaryEs: "Contacta a OPS mediante discovery calls, consultas directas o contratación de especialistas remotos en CX, TI y operaciones."
     });
@@ -579,9 +696,9 @@ function assessConfidence(reply, ai){
   const t = (reply||"").trim();
   if (!t) return {level:"low", reasons:["empty"]};
   const lower = t.toLowerCase();
-  const uncertain = /(i\s+(am|'m)\s+(not\s+)?sure|i\s+(do\s+not|don't)\s+know|unable to|cannot|can't)/i.test(lower);
-  const refusal   = /(i\s*am\s*sorry|i'm\s*sorry|cannot\s+comply|unable\s+to\s+assist)/i.test(lower);
-  const informative = /(business operations|contact center|it support|professionals)/i.test(lower);
+  const uncertain = /(i\s+(am|'m)\s+(not\s+)?sure|i\s+(do\s+not|don't)\s+know|unable to|cannot|can't|no\s+estoy\s+segur[ao]|no\s+sé|no\s+puedo\s+responder)/i.test(lower);
+  const refusal   = /(i\s*am\s*sorry|i'm\s*sorry|cannot\s+comply|unable\s+to\s+assist|lo\s+siento|no\s+puedo\s+cumplir|no\s+puedo\s+ayudarte)/i.test(lower);
+  const informative = /(business operations|operaciones de negocio|contact center|centro de contacto|it support|soporte ti|professionals|profesionales)/i.test(lower);
   const len = t.length;
   const tokens = Number(ai?.usage?.total_tokens ?? ai?.usage?.totalTokens ?? 0);
   if (uncertain || refusal) return {level:"low", reasons:["uncertain_tone"]};
