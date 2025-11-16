@@ -37,9 +37,9 @@ export default {
     const url = new URL(request.url);
     const method = request.method.toUpperCase();
 
-    // Honeypot ban check
-    const activeBan = await checkHoneypotBan(request, env);
-    if (activeBan?.blocked) return applySecurityHeaders(honeypotBlockedResponse(activeBan.reason, activeBan.until), request, env);
+    if ((url.pathname.startsWith("/auth/") || url.pathname.startsWith("/health/") || url.pathname.startsWith("/fallback/")) && m === "OPTIONS") {
+      return applySecurityHeaders(new Response(null, { status: 204 }), request, env);
+    }
 
     // CORS preflight
     if (url.pathname.startsWith("/api/") && method === "OPTIONS") {
@@ -242,46 +242,36 @@ async function handleSttRequest(request, env) {
       return honeypotBlockedResponse(hp.reason);
     }
 
-    const turnstileToken = extractTurnstileToken(form);
-    const turnstileGate  = await enforceTurnstile(turnstileToken, request, env);
-    if (turnstileGate) return turnstileGate;
-
-    const audio = form.get("audio");
-    if (!(audio instanceof File)) return json({error:"Audio blob missing"},400);
-
-    const maxBytes = clampInt(env.MAX_AUDIO_BYTES, 8_000_000);
-    if (audio.size > maxBytes) return json({error:"Audio payload exceeds limit"},413);
-
-    const buf = await audio.arrayBuffer();
-    const bytes = new Uint8Array(buf);
-
-    const lang   = sanitizeLocale(String(form.get("lang")||""));
-    const prefer = String(form.get("prefer")||"").trim().toLowerCase();
-    const model  = selectSttModel(env, prefer);
-
-    const ai = await env.AI.run(model, { audio: [...bytes], language: lang });
-
-    const text = extractTranscript(ai);
-    const clean = sanitizeText(text);
-    const digest = await sha512B64(clean);
-    const gw = resolveIntegrityGateway(env);
-    const protos = resolveIntegrityProtocols(env);
-
-    return new Response(JSON.stringify({ text: clean }), {
-      status:200,
-      headers:{
-        "content-type":"application/json; charset=UTF-8",
-        "cache-control":"no-store",
-        "x-tier": ai?.tier || "?",
-        "x-model": model,
-        "x-transcript-digest-sha512": digest,
-        "x-integrity-gateway": gw,
-        "x-integrity-protocols": protos
+    if (url.pathname === "/fallback/escalate") {
+      if (m !== "POST") {
+        return applySecurityHeaders(json({ error: "method_not_allowed" }, 405), request, env);
       }
-    });
 
-  } catch {
-    return json({error:"Failed to transcribe audio"},500);
+      const gate = enforceIntegrityHeadersOnly(request, env);
+      if (gate) return applySecurityHeaders(gate, request, env);
+
+      let payload = {};
+      try { payload = await request.json(); }
+      catch { return applySecurityHeaders(json({ error: "Invalid JSON" }, 400), request, env); }
+
+      const reason = typeof payload.reason === "string" && payload.reason.trim() ? payload.reason.trim() : "unspecified";
+      const confidence = typeof payload.confidence === "number" ? payload.confidence : null;
+      const meta = {
+        reason,
+        confidence,
+        lang: typeof payload.lang === "string" ? payload.lang : undefined,
+        userText: typeof payload.userText === "string" ? payload.userText : undefined,
+        fallback: typeof payload.fallback === "string" ? payload.fallback : undefined,
+        timestamp: payload.timestamp || new Date().toISOString(),
+        conversationTail: Array.isArray(payload.conversationTail) ? payload.conversationTail : undefined
+      };
+
+      forwardEscalation(meta, env).catch(()=>{});
+
+      return applySecurityHeaders(json({ escalated: true, reason, confidence }), request, env);
+    }
+
+    return applySecurityHeaders(json({ error: "not_found" }, 404), request, env);
   }
 }
 
@@ -913,8 +903,16 @@ async function enforceTurnstile(token, request, env){
   }
 }
 
-/* -------------------------------- Misc ----------------------------------- */
-function clampInt(v, d){ const n=Number(v); return Number.isFinite(n)?n:d; }
-function getSignatureTtl(env){ const f=300; const n=Number(env.SIG_TTL_SECONDS||NaN); if(!Number.isFinite(n)||n<=0) return f; return Math.max(60, Math.min(900, Math.floor(n))); }
-function getMaxTokens(env){ const n=Number(env.LLM_MAX_TOKENS||NaN); if(!Number.isFinite(n)||n<=0) return 768; return Math.min(1024,n); }
-
+async function forwardEscalation(payload, env) {
+  const hook = (env.ESCALATION_WEBHOOK || "").trim();
+  if (!hook) return;
+  try {
+    await fetch(hook, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ...payload, gateway: "withered-mouse-9aee" })
+    });
+  } catch (err) {
+    console.error("escalation_forward_failed", err);
+  }
+}

@@ -46,6 +46,7 @@ body.dark{--clr-bg:var(--clr-bg-dark);--clr-tx:var(--clr-tx-dark)}
   </div>
 </div>
 
+<script src="services/fallback_kb.js"></script>
 <script>
 const API_BASE   = 'https://ops-chattia-api.grabem-holdem-nuts-right.workers.dev';
 const AUTH_URL   = 'https://withered-mouse-9aee.grabem-holdem-nuts-right.workers.dev/auth/issue';
@@ -58,6 +59,10 @@ const sharedIntegrityHeaders = Object.freeze({
   'X-Integrity-Protocols': INTEGRITY_PROTOCOLS
 });
 const TURNSTILE_SITE_KEY = '0x4AAAAAACBDyXYbdQg180H4';
+const ESCALATION_URL = `${INTEGRITY_GATEWAY.replace(/\/$/, '')}/fallback/escalate`;
+const CONFIDENCE_THRESHOLD = 0.55;
+const MEMORY_KEY = 'chattia.memory.v1';
+const MEMORY_WINDOW = 40;
 
 const qs = s => document.querySelector(s);
 const log = qs('#chat-log'), form = qs('#chatbot-input-row'), input = qs('#chatbot-input'), send = qs('#chatbot-send');
@@ -68,6 +73,89 @@ const session = { terminated:false };
 
 function addMsg(t,c){const d=document.createElement('div');d.className='chat-msg '+c;d.textContent=t;log.appendChild(d);log.scrollTop=log.scrollHeight;return d;}
 function updateSend(){ const ok = !!input.value.trim() && !state.isSending && (!turnstileToken || turnstileToken.dataset.require!=='true' || !!turnstileToken.value.trim()); send.disabled = !ok || session.terminated; }
+
+function currentLang(){
+  const lng = (document.documentElement.lang || 'en').toLowerCase();
+  return lng.startsWith('es') ? 'es' : 'en';
+}
+function fallbackReply(userText){
+  try {
+    if (window.FallbackKB?.reply) {
+      return window.FallbackKB.reply(userText || '', currentLang());
+    }
+  } catch {}
+  return currentLang()==='es'
+    ? 'Estoy fuera de línea, pero puedo contarte sobre OPS Remote Professional Network.'
+    : 'I’m offline but can still summarize the OPS Remote Professional Network.';
+}
+function validMemoryEntry(entry){
+  return entry && typeof entry === 'object' && typeof entry.role === 'string' && typeof entry.content === 'string';
+}
+function loadMemory(){
+  try {
+    const raw = localStorage.getItem(MEMORY_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(validMemoryEntry).slice(-MEMORY_WINDOW);
+  } catch {
+    return [];
+  }
+}
+function persistMemory(){
+  try {
+    localStorage.setItem(MEMORY_KEY, JSON.stringify(state.conversation.slice(-MEMORY_WINDOW)));
+  } catch {}
+}
+function recordMessage(role, content, meta = {}){
+  state.conversation.push({ role, content, meta, ts: Date.now() });
+  if (state.conversation.length > MEMORY_WINDOW) {
+    state.conversation = state.conversation.slice(-MEMORY_WINDOW);
+  }
+  persistMemory();
+}
+function replayHistory(history){
+  history.forEach(msg => addMsg(msg.content, msg.role === 'user' ? 'user' : 'bot'));
+}
+function bootstrapConversation(){
+  const history = loadMemory();
+  if (history.length){
+    state.conversation = history;
+    replayHistory(history);
+    return;
+  }
+  const greeting = fallbackReply('');
+  addMsg(greeting,'bot');
+  recordMessage('assistant', greeting, { source:'fallback', reason:'greeting' });
+}
+function notifyEscalation(details = {}){
+  const payload = { ...details, lang: currentLang(), conversationTail: state.conversation.slice(-6) };
+  try {
+    fetch(ESCALATION_URL, {
+      method:'POST',
+      headers:{ ...sharedIntegrityHeaders, 'Content-Type':'application/json' },
+      body: JSON.stringify({ ...payload, timestamp: new Date().toISOString() })
+    }).catch(()=>{});
+  } catch {}
+}
+function escalateWithFallback(reason, userText, thinkingEl, extra = {}){
+  const fallback = fallbackReply(userText);
+  thinkingEl.textContent = fallback;
+  recordMessage('assistant', fallback, { source:'fallback', reason, ...extra });
+  notifyEscalation({ reason, userText, fallback, ...extra });
+}
+
+function sanitizedMessages(){
+  return state.conversation.map(item => ({ role: item.role, content: item.content }));
+}
+
+function recentSanitized(count){
+  const slice = state.conversation.slice(-count);
+  return slice.map(item => ({ role: item.role, content: item.content }));
+}
+
+bootstrapConversation();
+updateSend();
 
 function hexNonce32(){ const u8 = crypto.getRandomValues(new Uint8Array(16)); return [...u8].map(b=>b.toString(16).padStart(2,'0')).join(''); }
 async function sha256Hex(input){ const enc = typeof input==='string'? new TextEncoder().encode(input): input; const view = enc instanceof Uint8Array? enc: new Uint8Array(enc); const d = await crypto.subtle.digest('SHA-256', view); return [...new Uint8Array(d)].map(b=>b.toString(16).padStart(2,'0')).join(''); }
@@ -104,25 +192,44 @@ form.addEventListener('submit', async (e)=>{
   const msg = input.value.trim();
   if(!msg) return;
 
-  state.conversation.push({ role:'user', content: msg });
   addMsg(msg,'user');
+  recordMessage('user', msg, { source:'web' });
   input.value=''; updateSend();
 
   state.isSending = true; updateSend();
   const thinking = addMsg('…','bot');
 
   try{
-    const payload = { messages: state.conversation, metadata:{ channel:'chattia-web', locale: document.documentElement.lang || 'en' } };
+    const sanitized = sanitizedMessages();
+    const trainingWindow = recentSanitized(6);
+    const payload = {
+      messages: sanitized,
+      training_memory: trainingWindow,
+      metadata:{
+        channel:'chattia-web',
+        locale: currentLang(),
+        memory_key: MEMORY_KEY,
+        memory_window: state.conversation.length,
+        confidence_threshold: CONFIDENCE_THRESHOLD
+      }
+    };
     const turnToken = turnstileToken?.value?.trim(); if (turnToken) payload['cf-turnstile-response'] = turnToken;
 
     const r = await signedPost('/api/chat', payload);
+    if(!r.ok) throw new Error(`chat_failed:${r.status}`);
     const j = await r.json();
-    const reply = (j.reply || 'No reply.').trim();
-    thinking.textContent = reply;
-    state.conversation.push({ role:'assistant', content: reply });
+    const reply = (j.reply || '').trim();
+    const confidence = typeof j.confidence === 'number' ? j.confidence : null;
+    const shouldEscalate = j.escalate === true || !reply || (confidence !== null && confidence < CONFIDENCE_THRESHOLD);
+    if (shouldEscalate){
+      escalateWithFallback('low_confidence', msg, thinking, { confidence, upstreamReply: reply });
+    } else {
+      thinking.textContent = reply;
+      recordMessage('assistant', reply, { source:'api', confidence });
+    }
 
   }catch(err){
-    thinking.textContent = 'Error: Can’t reach Chattia.';
+    escalateWithFallback('network_error', msg, thinking, { error: err?.message || 'unknown_error' });
   }finally{
     state.isSending = false; updateSend();
     window.chattiaTurnstile?.clear(true);
