@@ -252,6 +252,73 @@ const themeCtrl = document.querySelector('#themeCtrl');
 
 const state = { conversation:[], isSending:false };
 const session = { terminated:false };
+const integrityState = { timer:null, focusBound:false, summary:null, apiDegradedUntil:0 };
+const storage = (()=>{ try{return window.localStorage;}catch{return null;} })();
+
+const i18n = Object.freeze({
+  en:{
+    title:'Chattia',
+    input:'Type your message… [Enter]',
+    sendLabel:'Send message',
+    themeDark:'Dark',
+    themeLight:'Light',
+    langLabel:'ES',
+    langToggle:'Switch language to Spanish',
+    themeToggleToDark:'Switch to dark theme',
+    themeToggleToLight:'Switch to light theme',
+    errors:{ unreachable:"Error: Can’t reach Chattia." },
+    status:{ online:'Secure link active', offline:'Offline – storing messages locally', fallback:'Primary API unreachable – using local safeguard' },
+    notes:{
+      verifying:'Verifying integrity stack…',
+      gatewayReady:'Integrity gateway synchronized (signature TTL {ttl}s)',
+      gatewayDegraded:'Integrity gateway unreachable – using local safeguards',
+      apiDegraded:'Primary API unreachable – serving from local safeguards',
+      offlineQueue:'Offline – queueing encrypted transcript locally'
+    }
+  },
+  es:{
+    title:'Chattia',
+    input:'Escribe tu mensaje… [Enter]',
+    sendLabel:'Enviar mensaje',
+    themeDark:'Oscuro',
+    themeLight:'Claro',
+    langLabel:'EN',
+    langToggle:'Cambiar idioma a inglés',
+    themeToggleToDark:'Cambiar a tema oscuro',
+    themeToggleToLight:'Cambiar a tema claro',
+    errors:{ unreachable:'Error: No puedo conectar con Chattia.' },
+    status:{ online:'Canal seguro activo', offline:'Sin conexión – guardando mensajes localmente', fallback:'API principal inalcanzable – usando salvaguarda local' },
+    notes:{
+      verifying:'Verificando la malla de integridad…',
+      gatewayReady:'Pasarela de integridad sincronizada (TTL de firma {ttl}s)',
+      gatewayDegraded:'Pasarela de integridad inalcanzable – usando salvaguardas locales',
+      apiDegraded:'API principal inalcanzable – respondiendo con salvaguarda local',
+      offlineQueue:'Sin conexión – encolando la transcripción cifrada'
+    }
+  }
+});
+
+function detectPreferredTheme(){
+  try {
+    return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  } catch {
+    return 'light';
+  }
+}
+
+const prefs = {
+  locale: safeGet('chattia:locale') || 'en',
+  theme: safeGet('chattia:theme') || detectPreferredTheme(),
+  status:{
+    mode: navigator.onLine ? 'online':'offline',
+    noteKey: navigator.onLine ? 'verifying' : 'offlineQueue',
+    noteVars:null,
+    noteText:''
+  }
+};
+
+function safeSet(key,val){ if(!storage) return; try{ storage.setItem(key,val); }catch{} }
+function safeGet(key){ if(!storage) return null; try{ return storage.getItem(key); }catch{ return null; } }
 
 /* ------------------- Theme + viewport ergonomics ------------------- */
 const THEME_KEY = 'chattia-theme';
@@ -364,6 +431,157 @@ function recentSanitized(count){
 
 bootstrapConversation();
 updateSend();
+
+function setTheme(theme){
+  prefs.theme = theme === 'dark' ? 'dark' : 'light';
+  document.body.classList.toggle('dark', prefs.theme === 'dark');
+  themeCtrl.textContent = prefs.theme === 'dark' ? i18n[prefs.locale].themeLight : i18n[prefs.locale].themeDark;
+  themeCtrl.dataset.active = prefs.theme === 'dark';
+  themeCtrl.setAttribute('aria-label', prefs.theme === 'dark' ? i18n[prefs.locale].themeToggleToLight : i18n[prefs.locale].themeToggleToDark);
+  safeSet('chattia:theme', prefs.theme);
+}
+
+function cycleTheme(){ setTheme(prefs.theme === 'dark' ? 'light' : 'dark'); }
+
+function setLocale(locale){
+  if(!i18n[locale]) locale = 'en';
+  prefs.locale = locale;
+  document.documentElement.lang = locale;
+  titleEl.textContent = i18n[locale].title;
+  input.placeholder = i18n[locale].input;
+  send.setAttribute('aria-label', i18n[locale].sendLabel);
+  langCtrl.textContent = i18n[locale].langLabel;
+  langCtrl.dataset.active = locale === 'es';
+  langCtrl.setAttribute('aria-label', i18n[locale].langToggle);
+  refreshStatusBanner();
+  safeSet('chattia:locale', locale);
+}
+
+function cycleLocale(){ setLocale(prefs.locale === 'en' ? 'es' : 'en'); }
+
+function setStatus(mode='online', note=''){
+  prefs.status.mode = mode;
+  if(typeof note === 'string'){
+    prefs.status.noteKey = null;
+    prefs.status.noteVars = null;
+    prefs.status.noteText = note;
+  }else if(note && typeof note === 'object'){
+    prefs.status.noteKey = note.key || null;
+    prefs.status.noteVars = note.vars || null;
+    prefs.status.noteText = '';
+  }else{
+    prefs.status.noteKey = null;
+    prefs.status.noteVars = null;
+    prefs.status.noteText = '';
+  }
+  refreshStatusBanner();
+}
+
+function formatStatusNote(locale, key, vars={}){
+  if(!key) return '';
+  const dict = i18n[locale]?.notes || i18n.en.notes || {};
+  let template = dict[key];
+  if(!template) return '';
+  const safeVars = (vars && typeof vars === 'object') ? vars : {};
+  return template.replace(/\{([^}]+)\}/g, (_, token)=>{
+    const trimmed = token.trim();
+    if(!(trimmed in safeVars)) return '';
+    return String(safeVars[trimmed]);
+  });
+}
+
+function refreshStatusBanner(){
+  const locale = prefs.locale;
+  const statusCfg = i18n[locale]?.status || i18n.en.status;
+  const mode = prefs.status.mode;
+  const note = formatStatusNote(locale, prefs.status.noteKey, prefs.status.noteVars) || prefs.status.noteText || '';
+  const className = mode === 'fallback' ? 'status-fallback' : mode === 'offline' ? 'status-offline':'status-online';
+  statusBanner.classList.remove('status-online','status-offline','status-fallback');
+  statusBanner.classList.add(className);
+  statusBanner.dataset.mode = mode;
+  const label = statusCfg[mode] || statusCfg.online;
+  statusText.textContent = note ? `${label} — ${note}` : label;
+}
+
+function initUi(){
+  setLocale(prefs.locale);
+  setTheme(prefs.theme);
+  setStatus(prefs.status.mode, prefs.status.noteKey ? { key:prefs.status.noteKey, vars:prefs.status.noteVars } : prefs.status.noteText);
+  langCtrl.addEventListener('click', cycleLocale);
+  themeCtrl.addEventListener('click', cycleTheme);
+  window.addEventListener('online', ()=> pollIntegritySummary());
+  window.addEventListener('offline', ()=> setStatus('offline', { key:'offlineQueue' }));
+}
+
+function getSummaryTtl(summary){
+  const ttlRaw = Number(summary?.signature_ttl ?? summary?.signatureTtl ?? summary?.signatureTTL);
+  return Number.isFinite(ttlRaw) ? ttlRaw : null;
+}
+
+function isApiDegraded(){
+  return Date.now() < (integrityState.apiDegradedUntil || 0);
+}
+
+function markApiDegraded(ms=API_DEGRADE_MEMORY_MS){
+  integrityState.apiDegradedUntil = Date.now() + Math.max(0, ms);
+}
+
+function clearApiDegraded(){
+  integrityState.apiDegradedUntil = 0;
+}
+
+function announceLastIntegrityStatus(){
+  if(!navigator.onLine){
+    setStatus('offline', { key:'offlineQueue' });
+    return;
+  }
+  if(isApiDegraded()){
+    setStatus('fallback', { key:'apiDegraded' });
+    return;
+  }
+  if(integrityState.summary){
+    const ttl = getSummaryTtl(integrityState.summary);
+    setStatus('online', { key:'gatewayReady', vars:{ ttl: Number.isFinite(ttl) ? ttl : 'N/A' } });
+    return;
+  }
+  setStatus('online', { key:'verifying' });
+}
+
+async function pollIntegritySummary(){
+  if(!navigator.onLine){
+    setStatus('offline', { key:'offlineQueue' });
+    return null;
+  }
+  try{
+    const res = await fetch(`${INTEGRITY_GATEWAY}/health/summary`, { headers: sharedIntegrityHeaders, cache:'no-store' });
+    if(!res.ok) throw new Error('integrity_health_error:'+res.status);
+    const data = await res.json();
+    integrityState.summary = data;
+    if(!isApiDegraded()){
+      const ttl = getSummaryTtl(data);
+      setStatus('online', { key:'gatewayReady', vars:{ ttl: Number.isFinite(ttl) ? ttl : 'N/A' } });
+    }
+    return data;
+  }catch(err){
+    console.warn('Integrity summary unavailable', err);
+    integrityState.summary = null;
+    if(!isApiDegraded()){
+      setStatus('fallback', { key:'gatewayDegraded' });
+    }
+    return null;
+  }
+}
+
+function startIntegrityMonitor(){
+  announceLastIntegrityStatus();
+  pollIntegritySummary();
+  if(integrityState.timer) clearInterval(integrityState.timer);
+  integrityState.timer = setInterval(pollIntegritySummary, STATUS_POLL_INTERVAL_MS);
+  if(!integrityState.focusBound){
+    window.addEventListener('focus', pollIntegritySummary);
+    integrityState.focusBound = true;
+  }
+}
 
 function hexNonce32(){ const u8 = crypto.getRandomValues(new Uint8Array(16)); return [...u8].map(b=>b.toString(16).padStart(2,'0')).join(''); }
 async function sha256Hex(input){ const enc = typeof input==='string'? new TextEncoder().encode(input): input; const view = enc instanceof Uint8Array? enc: new Uint8Array(enc); const d = await crypto.subtle.digest('SHA-256', view); return [...new Uint8Array(d)].map(b=>b.toString(16).padStart(2,'0')).join(''); }
