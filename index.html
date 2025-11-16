@@ -1,4 +1,4 @@
-<!-- index.html — GitHub Pages UI (auth → signed chat; hidden STT panel wired) -->
+<!-- index.html — GitHub Pages UI (signed chat; default live fallback; Cloudflare sanity check) -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -12,186 +12,57 @@
   crossorigin="anonymous" referrerpolicy="no-referrer" />
 <style>
 :root{
-  --clr-primary:#00c4ff;
-  --clr-accent:#ff3bdb;
-  --body-bg:#f4f2ff;
-  --body-text:#1d1232;
-  --surface:#251541;
-  --surface-soft:#220f3a;
-  --surface-alt:#1b0e2d;
-  --bot-bg:#321b53;
-  --bot-text:#fff;
-  --user-text:#050118;
-  --control-bg:rgba(255,255,255,0.08);
-}
-@media (prefers-color-scheme:dark){
-  :root{
-    --body-bg:#050111;
-    --body-text:#f4f3ff;
-  }
+  --clr-primary:#00c4ff; --clr-accent:#ff3bdb;
+  --body-bg:#050111; --body-text:#f4f3ff;
+  --surface:#251541; --surface-soft:#220f3a; --surface-alt:#1b0e2d;
+  --bot-bg:#321b53; --bot-text:#fff; --user-text:#050118;
+  --control-bg:rgba(255,255,255,0.08)
 }
 body[data-theme="light"]{
-  --body-bg:#fdfbff;
-  --body-text:#1b1030;
-  --surface:#faf6ff;
-  --surface-alt:#f5edff;
-  --surface-soft:#ece0ff;
-  --bot-bg:#efe7ff;
-  --bot-text:#2d1650;
-  --control-bg:rgba(10,4,32,0.08);
+  --body-bg:#fdfbff; --body-text:#1b1030;
+  --surface:#faf6ff; --surface-alt:#f5edff; --surface-soft:#ece0ff;
+  --bot-bg:#efe7ff; --bot-text:#2d1650; --control-bg:rgba(10,4,32,0.08)
 }
+*{box-sizing:border-box}
 body{
-  margin:0;
-  min-height:100vh;
-  font-family:system-ui,Segoe UI,Arial,sans-serif;
-  background:var(--body-bg);
-  color:var(--body-text);
-  transition:background .3s ease,color .3s ease;
-  padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  margin:0; min-height:100vh; font-family:system-ui,Segoe UI,Arial,sans-serif;
+  background:var(--body-bg); color:var(--body-text);
+  padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)
 }
 #chatbot-container{
-  position:fixed;
-  right:clamp(16px,4vw,32px);
-  bottom:clamp(16px,4vh,32px);
-  width:min(360px,calc(100vw - 32px));
-  height:min(560px,calc(100vh - 32px));
-  background:var(--surface);
-  border:2px solid var(--clr-accent);
-  border-radius:20px;
-  box-shadow:0 20px 50px rgba(5,1,17,.45);
-  display:flex;
-  flex-direction:column;
-  overflow:hidden;
-  z-index:10;
-  backdrop-filter:blur(4px);
+  position:fixed; right:16px; bottom:16px;
+  width:min(380px,calc(100vw - 32px)); height:min(640px,calc(100vh - 32px));
+  background:var(--surface); border:2px solid var(--clr-accent); border-radius:18px; overflow:hidden;
+  display:flex; flex-direction:column; box-shadow:0 20px 50px rgba(5,1,17,.45); z-index:10
 }
-@supports (height:100dvh){
-  #chatbot-container{height:min(560px,calc(100dvh - 32px));}
-}
-#chatbot-header{
-  display:flex;
-  justify-content:space-between;
-  align-items:center;
-  padding:.85rem 1.1rem;
-  gap:.75rem;
-  background:linear-gradient(135deg,var(--clr-primary),var(--clr-accent));
-  color:#fff;
-  font-weight:600;
-}
-#chatbot-header h1{
-  font-size:1.05rem;
-  margin:0;
-}
-.ctrl-btn{
-  background:rgba(255,255,255,.18);
-  border:none;
-  border-radius:999px;
-  color:#fff;
-  font-size:.82rem;
-  font-weight:600;
-  padding:.25rem .85rem;
-  cursor:pointer;
-}
-.ctrl-btn:focus-visible{outline:2px solid #fff;outline-offset:2px;}
-#chat-log{
-  flex:1;
-  overflow:auto;
-  padding:1rem;
-  background:var(--surface-alt);
-  color:var(--bot-text);
-  font-size:.95rem;
-}
-.chat-msg{
-  margin:.5rem 0;
-  max-width:90%;
-  line-height:1.35;
-}
-.user{
-  margin-left:auto;
-  background:var(--clr-primary);
-  color:var(--user-text);
-  padding:.5rem .7rem;
-  border-radius:16px 16px 0 16px;
-}
-.bot{
-  margin-right:auto;
-  background:var(--bot-bg);
-  color:var(--bot-text);
-  padding:.5rem .7rem;
-  border-radius:16px 16px 16px 0;
-}
-#chatbot-form-container{
-  background:var(--surface-soft);
-  border-top:1px solid rgba(255,255,255,.12);
-  padding:.65rem .9rem calc(.65rem + env(safe-area-inset-bottom));
-}
-#chatbot-input-row{
-  display:flex;
-  gap:.6rem;
-}
-#chatbot-input{
-  flex:1;
-  background:var(--control-bg);
-  border:none;
-  border-radius:12px;
-  color:var(--bot-text);
-  font-size:.95rem;
-  padding:.6rem .75rem;
-}
-#chatbot-input::placeholder{color:rgba(255,255,255,.75);}
-body[data-theme="light"] #chatbot-input::placeholder{color:#6b5d84;}
-#chatbot-send{
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  gap:6px;
-  background:var(--clr-accent);
-  border:none;
-  color:#fff;
-  font-weight:600;
-  padding:.55rem .95rem;
-  border-radius:12px;
-  cursor:pointer;
-  box-shadow:0 6px 16px rgba(255,59,219,.35);
-}
-.visually-hidden{position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0;}
-#chatbot-send i{font-size:.9rem;}
+@supports (height:100dvh){ #chatbot-container{height:min(640px,calc(100dvh - 32px))} }
+#chatbot-header{ display:flex; align-items:center; gap:.5rem; justify-content:space-between;
+  padding:.7rem .9rem; background:linear-gradient(135deg,var(--clr-primary),var(--clr-accent)); color:#fff }
+#chatbot-header h1{ margin:0; font-size:1.05rem }
+.header-actions{ display:flex; gap:.5rem }
+.ctrl-btn{ background:rgba(255,255,255,.18); border:none; border-radius:999px; color:#fff; padding:.3rem .8rem; font-weight:600; cursor:pointer }
+.ctrl-btn:focus-visible{ outline:2px solid #fff; outline-offset:2px }
+
+#status-banner{ background:var(--surface-soft); color:#fff; padding:.4rem .8rem; font-size:.85rem }
+#status-banner.status-online{ background:rgba(0,200,110,.25) }
+#status-banner.status-offline{ background:rgba(230,0,0,.25) }
+#status-banner.status-fallback{ background:rgba(255,180,0,.25) }
+
+#chat-log{ flex:1; overflow:auto; padding:1rem; background:var(--surface-alt); color:var(--bot-text); font-size:.95rem }
+.chat-msg{ margin:.5rem 0; max-width:90%; line-height:1.35; word-wrap:break-word }
+.user{ margin-left:auto; background:var(--clr-primary); color:var(--user-text); padding:.5rem .7rem; border-radius:16px 16px 0 16px }
+.bot{ margin-right:auto; background:var(--bot-bg); color:var(--bot-text); padding:.5rem .7rem; border-radius:16px 16px 16px 0 }
+
+#chatbot-form-container{ background:var(--surface-soft); border-top:1px solid rgba(255,255,255,.12); padding:.65rem .9rem calc(.65rem + env(safe-area-inset-bottom)) }
+#chatbot-input-row{ display:flex; gap:.6rem }
+#chatbot-input{ flex:1; background:var(--control-bg); border:none; border-radius:12px; color:var(--bot-text); font-size:.95rem; padding:.6rem .75rem }
+#chatbot-send{ display:flex; align-items:center; justify-content:center; gap:6px; background:var(--clr-accent); border:none; color:#fff; font-weight:600; padding:.55rem .95rem; border-radius:12px; cursor:pointer; box-shadow:0 6px 16px rgba(255,59,219,.35) }
+.visually-hidden{position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+
 .turnstile-slot{height:0;overflow:hidden}
-#stt-controls{display:none}
-@media (max-width:720px){
-  #chatbot-container{
-    width:min(420px,calc(100vw - 24px));
-    right:16px;
-    left:16px;
-    margin:0 auto;
-  }
-}
 @media (max-width:560px){
-  #chatbot-container{
-    inset:0;
-    width:100vw;
-    height:100vh;
-    border-radius:0;
-    margin:0;
-    transform:none;
-  }
-  @supports (height:100dvh){
-    #chatbot-container{height:100dvh;}
-  }
-  #chatbot-header{padding:calc(.85rem + env(safe-area-inset-top)) 1rem .85rem;}
-  #chatbot-form-container{padding:.65rem 1rem calc(.65rem + env(safe-area-inset-bottom));}
-}
-@media (max-height:520px){
-  #chatbot-container{height:calc(100vh - 24px);}
-  #chatbot-header{padding:.65rem .9rem;}
-  #chatbot-form-container{padding:.5rem .75rem;}
-}
-@media (max-width:380px){
-  #chatbot-header h1{font-size:.95rem;}
-  #chatbot-send{padding:.5rem .75rem;}
-}
-@media (prefers-reduced-motion:reduce){
-  *,*::before,*::after{transition:none!important;animation-duration:.001s!important;}
+  #chatbot-container{ inset:0; width:100vw; height:100vh; border-radius:0 }
+  @supports(height:100dvh){ #chatbot-container{height:100dvh} }
 }
 </style>
 </head>
@@ -199,14 +70,18 @@ body[data-theme="light"] #chatbot-input::placeholder{color:#6b5d84;}
 
 <div id="chatbot-container" role="dialog" aria-modal="true">
   <div id="chatbot-header">
-    <h1>Chattia</h1>
-    <button id="themeCtrl" class="ctrl-btn" type="button" aria-pressed="false">Dark</button>
+    <h1 id="titleEl">Chattia</h1>
+    <div class="header-actions">
+      <button id="langCtrl" class="ctrl-btn" type="button" aria-pressed="false" aria-label="Switch language">ES</button>
+      <button id="themeCtrl" class="ctrl-btn" type="button" aria-pressed="false">Dark</button>
+    </div>
   </div>
+  <div id="status-banner" class="status-online"><span id="statusText">Secure link active</span></div>
   <div id="chat-log" aria-live="polite"></div>
   <div id="chatbot-form-container">
     <form id="chatbot-input-row" autocomplete="off">
       <div id="turnstile-slot" class="turnstile-slot" aria-hidden="true"></div>
-      <input id="turnstile-token" type="hidden" name="cf-turnstile-response" value="" data-require="true">
+      <input id="turnstile-token" type="hidden" name="cf-turnstile-response" value="" data-require="false">
       <label class="visually-hidden" for="chatbot-company">Company</label>
       <input id="chatbot-company" type="text" name="company" autocomplete="off" aria-hidden="true" tabindex="-1" style="position:absolute;left:-9999px">
       <input id="chatbot-input" type="text" placeholder="Type your message… [Enter]" maxlength="256">
@@ -217,341 +92,112 @@ body[data-theme="light"] #chatbot-input::placeholder{color:#6b5d84;}
 
 <script src="services/fallback_kb.js"></script>
 <script>
-/* ------------------- CONFIG (match Worker) ------------------- */
+/* ---------- CONFIG (must match Worker) ---------- */
 const INTEGRITY_VALUE   = (document.querySelector('meta[name="integrity-token"]')?.content||'').trim() || 'https://chattiavato-a11y.github.io';
 const INTEGRITY_GATEWAY = 'https://withered-mouse-9aee.grabem-holdem-nuts-right.workers.dev';
 const INTEGRITY_PROTOCOLS = 'CORS,CSP,OPS-CySec-Core,CISA,NIST,PCI-DSS,SHA-384,SHA-512';
 
-const API_BASE = 'https://withered-mouse-9aee.grabem-holdem-nuts-right.workers.dev';
+const API_BASE = INTEGRITY_GATEWAY;           // single Worker handles auth+chat+stt
 const CHAT_PATH = '/api/chat';
 const STT_PATH  = '/api/stt';
 const AUTH_URL  = `${API_BASE}/auth/issue`;
+const ESCALATION_URL = `${API_BASE}/fallback/escalate`;
 
-const TURNSTILE_SITE_KEY = '0x4AAAAAACBDyXYbdQg180H4';
+const STATUS_POLL_INTERVAL_MS = 30000;
+const API_DEGRADE_MEMORY_MS = 90000;
+const CONFIDENCE_THRESHOLD = 'low'; // escalate when server marks "low"
 
+/* ---------- Shared headers ---------- */
 const sharedIntegrityHeaders = Object.freeze({
   'X-Integrity': INTEGRITY_VALUE,
   'X-Integrity-Gateway': INTEGRITY_GATEWAY,
   'X-Integrity-Protocols': INTEGRITY_PROTOCOLS
 });
-const TURNSTILE_SITE_KEY = '0x4AAAAAACBDyXYbdQg180H4';
-const ESCALATION_URL = `${INTEGRITY_GATEWAY.replace(/\/$/, '')}/fallback/escalate`;
-const CONFIDENCE_THRESHOLD = 0.55;
-const MEMORY_KEY = 'chattia.memory.v1';
-const MEMORY_WINDOW = 40;
 
-/* ------------------- UI refs ------------------- */
+/* ---------- UI refs ---------- */
+const titleEl = document.getElementById('titleEl');
+const langCtrl = document.getElementById('langCtrl');
+const themeCtrl = document.getElementById('themeCtrl');
+const statusBanner = document.getElementById('status-banner');
+const statusText = document.getElementById('statusText');
 const logEl  = document.querySelector('#chat-log');
 const form   = document.querySelector('#chatbot-input-row');
 const input  = document.querySelector('#chatbot-input');
 const send   = document.querySelector('#chatbot-send');
 const honeyp = document.querySelector('#chatbot-company');
-const tSlot  = document.querySelector('#turnstile-slot');
 const tTok   = document.querySelector('#turnstile-token');
-const themeCtrl = document.querySelector('#themeCtrl');
 
 const state = { conversation:[], isSending:false };
-const session = { terminated:false };
 const integrityState = { timer:null, focusBound:false, summary:null, apiDegradedUntil:0 };
 const storage = (()=>{ try{return window.localStorage;}catch{return null;} })();
 
 const i18n = Object.freeze({
-  en:{
-    title:'Chattia',
-    input:'Type your message… [Enter]',
-    sendLabel:'Send message',
-    themeDark:'Dark',
-    themeLight:'Light',
-    langLabel:'ES',
-    langToggle:'Switch language to Spanish',
-    themeToggleToDark:'Switch to dark theme',
-    themeToggleToLight:'Switch to light theme',
-    errors:{ unreachable:"Error: Can’t reach Chattia." },
-    status:{ online:'Secure link active', offline:'Offline – storing messages locally', fallback:'Primary API unreachable – using local safeguard' },
-    notes:{
-      verifying:'Verifying integrity stack…',
-      gatewayReady:'Integrity gateway synchronized (signature TTL {ttl}s)',
-      gatewayDegraded:'Integrity gateway unreachable – using local safeguards',
-      apiDegraded:'Primary API unreachable – serving from local safeguards',
-      offlineQueue:'Offline – queueing encrypted transcript locally'
-    }
-  },
-  es:{
-    title:'Chattia',
-    input:'Escribe tu mensaje… [Enter]',
-    sendLabel:'Enviar mensaje',
-    themeDark:'Oscuro',
-    themeLight:'Claro',
-    langLabel:'EN',
-    langToggle:'Cambiar idioma a inglés',
-    themeToggleToDark:'Cambiar a tema oscuro',
-    themeToggleToLight:'Cambiar a tema claro',
-    errors:{ unreachable:'Error: No puedo conectar con Chattia.' },
-    status:{ online:'Canal seguro activo', offline:'Sin conexión – guardando mensajes localmente', fallback:'API principal inalcanzable – usando salvaguarda local' },
-    notes:{
-      verifying:'Verificando la malla de integridad…',
-      gatewayReady:'Pasarela de integridad sincronizada (TTL de firma {ttl}s)',
-      gatewayDegraded:'Pasarela de integridad inalcanzable – usando salvaguardas locales',
-      apiDegraded:'API principal inalcanzable – respondiendo con salvaguarda local',
-      offlineQueue:'Sin conexión – encolando la transcripción cifrada'
-    }
-  }
+  en:{ title:'Chattia', input:'Type your message… [Enter]', sendLabel:'Send message',
+      errors:{ unreachable:"Error: Can’t reach Chattia." },
+      status:{ online:'Secure link active', offline:'Offline – storing messages locally', fallback:'Primary API unreachable – using local safeguard' },
+      notes:{ verifying:'Verifying integrity…', gatewayReady:'Integrity synchronized (signature TTL {ttl}s)', gatewayDegraded:'Integrity gateway unreachable', apiDegraded:'Primary API unreachable', offlineQueue:'Offline – local queue' } },
+  es:{ title:'Chattia', input:'Escribe tu mensaje… [Enter]', sendLabel:'Enviar mensaje',
+      errors:{ unreachable:'Error: No puedo conectar con Chattia.' },
+      status:{ online:'Canal seguro activo', offline:'Sin conexión – guardando localmente', fallback:'API principal inalcanzable – salvaguarda local' },
+      notes:{ verifying:'Verificando integridad…', gatewayReady:'Pasarela sincronizada (TTL de firma {ttl}s)', gatewayDegraded:'Pasarela inalcanzable', apiDegraded:'API inalcanzable', offlineQueue:'Sin conexión – cola local' } }
 });
 
-function detectPreferredTheme(){
-  try {
-    return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-  } catch {
-    return 'light';
-  }
+function currentLang(){ const lng = (document.documentElement.lang || 'en').toLowerCase(); return lng.startsWith('es') ? 'es' : 'en'; }
+function setLocale(locale){
+  document.documentElement.lang = locale;
+  const L = i18n[locale]||i18n.en;
+  titleEl.textContent = L.title;
+  input.placeholder = L.input;
+  send.setAttribute('aria-label', L.sendLabel);
+  langCtrl.textContent = locale==='es'?'EN':'ES';
+  refreshStatusBanner();
+  try{ localStorage.setItem('chattia:locale', locale); }catch{}
 }
+function cycleLocale(){ setLocale(currentLang()==='en'?'es':'en'); }
 
-const prefs = {
-  locale: safeGet('chattia:locale') || 'en',
-  theme: safeGet('chattia:theme') || detectPreferredTheme(),
-  status:{
-    mode: navigator.onLine ? 'online':'offline',
-    noteKey: navigator.onLine ? 'verifying' : 'offlineQueue',
-    noteVars:null,
-    noteText:''
-  }
-};
-
-function safeSet(key,val){ if(!storage) return; try{ storage.setItem(key,val); }catch{} }
-function safeGet(key){ if(!storage) return null; try{ return storage.getItem(key); }catch{ return null; } }
-
-/* ------------------- Theme + viewport ergonomics ------------------- */
+/* ---------- Theme ---------- */
 const THEME_KEY = 'chattia-theme';
-const prefersDark = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : {
-  matches:true,
-  addEventListener:()=>{},
-  addListener:()=>{}
-};
-
-function readStoredTheme(){ try { return localStorage.getItem(THEME_KEY); } catch { return null; } }
-function storeTheme(theme){ try { localStorage.setItem(THEME_KEY, theme); } catch { /* ignore */ } }
-
 function applyTheme(theme){
   document.body.dataset.theme = theme;
-  if (themeCtrl){
-    const nextLabel = theme === 'dark' ? 'Light' : 'Dark';
-    themeCtrl.textContent = nextLabel;
-    themeCtrl.setAttribute('aria-pressed', theme === 'dark' ? 'true' : 'false');
-  }
+  themeCtrl.textContent = theme === 'dark' ? 'Light' : 'Dark';
+  try{ localStorage.setItem(THEME_KEY, theme); }catch{}
 }
+(function initTheme(){
+  const stored = (()=>{ try{return localStorage.getItem(THEME_KEY);}catch{return null;} })();
+  const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  applyTheme(stored || (prefersDark?'dark':'light'));
+})();
+themeCtrl.addEventListener('click', ()=> applyTheme(document.body.dataset.theme==='dark'?'light':'dark'));
 
-const initialTheme = readStoredTheme() || (prefersDark.matches ? 'dark' : 'light');
-applyTheme(initialTheme);
-
-themeCtrl?.addEventListener('click', ()=>{
-  const next = document.body.dataset.theme === 'light' ? 'dark' : 'light';
-  applyTheme(next);
-  storeTheme(next);
-});
-
-function currentLang(){
-  const lng = (document.documentElement.lang || 'en').toLowerCase();
-  return lng.startsWith('es') ? 'es' : 'en';
-}
-function fallbackReply(userText){
-  try {
-    if (window.FallbackKB?.reply) {
-      return window.FallbackKB.reply(userText || '', currentLang());
-    }
-  } catch {}
-  return currentLang()==='es'
-    ? 'Estoy fuera de línea, pero puedo contarte sobre OPS Remote Professional Network.'
-    : 'I’m offline but can still summarize the OPS Remote Professional Network.';
-}
-function validMemoryEntry(entry){
-  return entry && typeof entry === 'object' && typeof entry.role === 'string' && typeof entry.content === 'string';
-}
-function loadMemory(){
-  try {
-    const raw = localStorage.getItem(MEMORY_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter(validMemoryEntry).slice(-MEMORY_WINDOW);
-  } catch {
-    return [];
-  }
-}
-function persistMemory(){
-  try {
-    localStorage.setItem(MEMORY_KEY, JSON.stringify(state.conversation.slice(-MEMORY_WINDOW)));
-  } catch {}
-}
-function recordMessage(role, content, meta = {}){
-  state.conversation.push({ role, content, meta, ts: Date.now() });
-  if (state.conversation.length > MEMORY_WINDOW) {
-    state.conversation = state.conversation.slice(-MEMORY_WINDOW);
-  }
-  persistMemory();
-}
-function replayHistory(history){
-  history.forEach(msg => addMsg(msg.content, msg.role === 'user' ? 'user' : 'bot'));
-}
-function bootstrapConversation(){
-  const history = loadMemory();
-  if (history.length){
-    state.conversation = history;
-    replayHistory(history);
-    return;
-  }
-  const greeting = fallbackReply('');
-  addMsg(greeting,'bot');
-  recordMessage('assistant', greeting, { source:'fallback', reason:'greeting' });
-}
-function notifyEscalation(details = {}){
-  const payload = { ...details, lang: currentLang(), conversationTail: state.conversation.slice(-6) };
-  try {
-    fetch(ESCALATION_URL, {
-      method:'POST',
-      headers:{ ...sharedIntegrityHeaders, 'Content-Type':'application/json' },
-      body: JSON.stringify({ ...payload, timestamp: new Date().toISOString() })
-    }).catch(()=>{});
-  } catch {}
-}
-function escalateWithFallback(reason, userText, thinkingEl, extra = {}){
-  const fallback = fallbackReply(userText);
-  thinkingEl.textContent = fallback;
-  recordMessage('assistant', fallback, { source:'fallback', reason, ...extra });
-  notifyEscalation({ reason, userText, fallback, ...extra });
-}
-
-function sanitizedMessages(){
-  return state.conversation.map(item => ({ role: item.role, content: item.content }));
-}
-
-function recentSanitized(count){
-  const slice = state.conversation.slice(-count);
-  return slice.map(item => ({ role: item.role, content: item.content }));
-}
-
-bootstrapConversation();
-updateSend();
-
-function setTheme(theme){
-  prefs.theme = theme === 'dark' ? 'dark' : 'light';
-  document.body.classList.toggle('dark', prefs.theme === 'dark');
-  themeCtrl.textContent = prefs.theme === 'dark' ? i18n[prefs.locale].themeLight : i18n[prefs.locale].themeDark;
-  themeCtrl.dataset.active = prefs.theme === 'dark';
-  themeCtrl.setAttribute('aria-label', prefs.theme === 'dark' ? i18n[prefs.locale].themeToggleToLight : i18n[prefs.locale].themeToggleToDark);
-  safeSet('chattia:theme', prefs.theme);
-}
-
-function cycleTheme(){ setTheme(prefs.theme === 'dark' ? 'light' : 'dark'); }
-
-function setLocale(locale){
-  if(!i18n[locale]) locale = 'en';
-  prefs.locale = locale;
-  document.documentElement.lang = locale;
-  titleEl.textContent = i18n[locale].title;
-  input.placeholder = i18n[locale].input;
-  send.setAttribute('aria-label', i18n[locale].sendLabel);
-  langCtrl.textContent = i18n[locale].langLabel;
-  langCtrl.dataset.active = locale === 'es';
-  langCtrl.setAttribute('aria-label', i18n[locale].langToggle);
-  refreshStatusBanner();
-  safeSet('chattia:locale', locale);
-}
-
-function cycleLocale(){ setLocale(prefs.locale === 'en' ? 'es' : 'en'); }
-
-function setStatus(mode='online', note=''){
-  prefs.status.mode = mode;
-  if(typeof note === 'string'){
-    prefs.status.noteKey = null;
-    prefs.status.noteVars = null;
-    prefs.status.noteText = note;
-  }else if(note && typeof note === 'object'){
-    prefs.status.noteKey = note.key || null;
-    prefs.status.noteVars = note.vars || null;
-    prefs.status.noteText = '';
-  }else{
-    prefs.status.noteKey = null;
-    prefs.status.noteVars = null;
-    prefs.status.noteText = '';
-  }
-  refreshStatusBanner();
-}
-
-function formatStatusNote(locale, key, vars={}){
-  if(!key) return '';
-  const dict = i18n[locale]?.notes || i18n.en.notes || {};
-  let template = dict[key];
-  if(!template) return '';
-  const safeVars = (vars && typeof vars === 'object') ? vars : {};
-  return template.replace(/\{([^}]+)\}/g, (_, token)=>{
-    const trimmed = token.trim();
-    if(!(trimmed in safeVars)) return '';
-    return String(safeVars[trimmed]);
-  });
-}
-
-function refreshStatusBanner(){
-  const locale = prefs.locale;
-  const statusCfg = i18n[locale]?.status || i18n.en.status;
-  const mode = prefs.status.mode;
-  const note = formatStatusNote(locale, prefs.status.noteKey, prefs.status.noteVars) || prefs.status.noteText || '';
-  const className = mode === 'fallback' ? 'status-fallback' : mode === 'offline' ? 'status-offline':'status-online';
-  statusBanner.classList.remove('status-online','status-offline','status-fallback');
-  statusBanner.classList.add(className);
-  statusBanner.dataset.mode = mode;
-  const label = statusCfg[mode] || statusCfg.online;
-  statusText.textContent = note ? `${label} — ${note}` : label;
-}
-
-function initUi(){
-  setLocale(prefs.locale);
-  setTheme(prefs.theme);
-  setStatus(prefs.status.mode, prefs.status.noteKey ? { key:prefs.status.noteKey, vars:prefs.status.noteVars } : prefs.status.noteText);
-  langCtrl.addEventListener('click', cycleLocale);
-  themeCtrl.addEventListener('click', cycleTheme);
-  window.addEventListener('online', ()=> pollIntegritySummary());
-  window.addEventListener('offline', ()=> setStatus('offline', { key:'offlineQueue' }));
-}
-
+/* ---------- Status / Integrity ---------- */
 function getSummaryTtl(summary){
   const ttlRaw = Number(summary?.signature_ttl ?? summary?.signatureTtl ?? summary?.signatureTTL);
   return Number.isFinite(ttlRaw) ? ttlRaw : null;
 }
+function isApiDegraded(){ return Date.now() < (integrityState.apiDegradedUntil || 0); }
+function markApiDegraded(ms=API_DEGRADE_MEMORY_MS){ integrityState.apiDegradedUntil = Date.now() + Math.max(0, ms); }
+function clearApiDegraded(){ integrityState.apiDegradedUntil = 0; }
 
-function isApiDegraded(){
-  return Date.now() < (integrityState.apiDegradedUntil || 0);
+function formatStatusNote(locale, key, vars={}){
+  if(!key) return '';
+  const dict = i18n[locale]?.notes || i18n.en.notes || {};
+  let template = dict[key]; if(!template) return '';
+  return template.replace(/\{([^}]+)\}/g, (_, t)=> String(vars[t.trim()] ?? ''));
 }
-
-function markApiDegraded(ms=API_DEGRADE_MEMORY_MS){
-  integrityState.apiDegradedUntil = Date.now() + Math.max(0, ms);
+function refreshStatusBanner(noteKey=null, vars=null){
+  const locale = currentLang();
+  const statusCfg = i18n[locale]?.status || i18n.en.status;
+  let mode = 'online';
+  if(!navigator.onLine) mode = 'offline';
+  else if (isApiDegraded()) mode = 'fallback';
+  statusBanner.classList.remove('status-online','status-offline','status-fallback');
+  statusBanner.classList.add(mode==='fallback'?'status-fallback':(mode==='offline'?'status-offline':'status-online'));
+  const label = statusCfg[mode] || statusCfg.online;
+  const note = noteKey ? formatStatusNote(locale, noteKey, vars||{}) : '';
+  statusText.textContent = note ? `${label} — ${note}` : label;
 }
-
-function clearApiDegraded(){
-  integrityState.apiDegradedUntil = 0;
-}
-
-function announceLastIntegrityStatus(){
-  if(!navigator.onLine){
-    setStatus('offline', { key:'offlineQueue' });
-    return;
-  }
-  if(isApiDegraded()){
-    setStatus('fallback', { key:'apiDegraded' });
-    return;
-  }
-  if(integrityState.summary){
-    const ttl = getSummaryTtl(integrityState.summary);
-    setStatus('online', { key:'gatewayReady', vars:{ ttl: Number.isFinite(ttl) ? ttl : 'N/A' } });
-    return;
-  }
-  setStatus('online', { key:'verifying' });
-}
-
 async function pollIntegritySummary(){
-  if(!navigator.onLine){
-    setStatus('offline', { key:'offlineQueue' });
-    return null;
-  }
+  if(!navigator.onLine){ refreshStatusBanner('offlineQueue'); return null; }
   try{
     const res = await fetch(`${INTEGRITY_GATEWAY}/health/summary`, { headers: sharedIntegrityHeaders, cache:'no-store' });
     if(!res.ok) throw new Error('integrity_health_error:'+res.status);
@@ -559,21 +205,17 @@ async function pollIntegritySummary(){
     integrityState.summary = data;
     if(!isApiDegraded()){
       const ttl = getSummaryTtl(data);
-      setStatus('online', { key:'gatewayReady', vars:{ ttl: Number.isFinite(ttl) ? ttl : 'N/A' } });
+      refreshStatusBanner('gatewayReady', { ttl: Number.isFinite(ttl) ? ttl : 'N/A' });
     }
     return data;
-  }catch(err){
-    console.warn('Integrity summary unavailable', err);
+  }catch{
     integrityState.summary = null;
-    if(!isApiDegraded()){
-      setStatus('fallback', { key:'gatewayDegraded' });
-    }
+    if(!isApiDegraded()) refreshStatusBanner('gatewayDegraded');
     return null;
   }
 }
-
 function startIntegrityMonitor(){
-  announceLastIntegrityStatus();
+  refreshStatusBanner('verifying');
   pollIntegritySummary();
   if(integrityState.timer) clearInterval(integrityState.timer);
   integrityState.timer = setInterval(pollIntegritySummary, STATUS_POLL_INTERVAL_MS);
@@ -583,11 +225,29 @@ function startIntegrityMonitor(){
   }
 }
 
-function hexNonce32(){ const u8 = crypto.getRandomValues(new Uint8Array(16)); return [...u8].map(b=>b.toString(16).padStart(2,'0')).join(''); }
-async function sha256Hex(input){ const enc = typeof input==='string'? new TextEncoder().encode(input): input; const view = enc instanceof Uint8Array? enc: new Uint8Array(enc); const d = await crypto.subtle.digest('SHA-256', view); return [...new Uint8Array(d)].map(b=>b.toString(16).padStart(2,'0')).join(''); }
+/* ---------- Memory ---------- */
+const MEMORY_KEY = 'chattia.memory.v1';
+const MEMORY_WINDOW = 40;
+function validMemoryEntry(entry){ return entry && typeof entry === 'object' && typeof entry.role === 'string' && typeof entry.content === 'string'; }
+function loadMemory(){
+  try { const raw = localStorage.getItem(MEMORY_KEY); if(!raw) return []; const arr = JSON.parse(raw); return Array.isArray(arr)?arr.filter(validMemoryEntry).slice(-MEMORY_WINDOW):[]; } catch { return []; }
+}
+function persistMemory(){ try{ localStorage.setItem(MEMORY_KEY, JSON.stringify(state.conversation.slice(-MEMORY_WINDOW))); }catch{} }
+function recordMessage(role, content, meta = {}){ state.conversation.push({ role, content, meta, ts: Date.now() }); if(state.conversation.length>MEMORY_WINDOW) state.conversation = state.conversation.slice(-MEMORY_WINDOW); persistMemory(); }
 
-/* ------------------- Integrity signing (browser) ------------------- */
-function hexNonce32(){ const u8=crypto.getRandomValues(new Uint8Array(16)); return [...u8].map(b=>b.toString(16).padStart(2,'0')).join(''); }
+/* ---------- UI helpers ---------- */
+function addMsg(text, who='bot'){
+  const div = document.createElement('div');
+  div.className = `chat-msg ${who==='user'?'user':'bot'}`;
+  div.textContent = String(text||'').trim() || '…';
+  logEl.appendChild(div);
+  logEl.scrollTop = logEl.scrollHeight;
+  return div;
+}
+function updateSend(){ send.disabled = state.isSending || !input.value.trim(); }
+
+/* ---------- Integrity signing ---------- */
+function hexNonce32(){ const u8 = crypto.getRandomValues(new Uint8Array(16)); return [...u8].map(b=>b.toString(16).padStart(2,'0')).join(''); }
 async function sha256Hex(input){
   const enc = typeof input==='string' ? new TextEncoder().encode(input) : (input instanceof Uint8Array ? input : new Uint8Array(input));
   const d = await crypto.subtle.digest('SHA-256', enc);
@@ -613,104 +273,99 @@ async function signedPost(path, json){
     body
   });
 }
-async function signedFormPost(path, form){
-  const probe = new Request('https://example.invalid',{method:'POST',body:form});
-  const buf = await probe.arrayBuffer();
-  const ct  = probe.headers.get('content-type') || 'application/octet-stream';
-  const bodySha = await sha256Hex(buf);
-  const {signature, ts, nonce} = await mintSignature(path, 'POST', bodySha);
-  return fetch(`${API_BASE}${path}`, {
-    method:'POST',
-    headers:{ ...sharedIntegrityHeaders, 'Content-Type':ct, 'X-Request-Signature':signature,'X-Request-Timestamp':ts,'X-Request-Nonce':nonce },
-    body: buf
-  });
+
+/* ---------- Fallback reply ---------- */
+function fallbackReply(userText){
+  try { if (window.FallbackKB?.reply) return window.FallbackKB.reply(userText||'', currentLang()); } catch {}
+  return currentLang()==='es' ? 'Estoy en modo local protegido. ¿En qué puedo ayudarte?' : 'I’m in safeguarded local mode. How can I help?';
 }
 
-/* ------------------- Chat flow ------------------- */
+/* ---------- Bootstrap ---------- */
+function bootstrapConversation(){
+  const saved = loadMemory();
+  if (saved.length){
+    state.conversation = saved;
+    for (const msg of saved) addMsg(msg.content, msg.role === 'user' ? 'user' : 'bot');
+    return;
+  }
+  const greeting = fallbackReply('hello');
+  addMsg(greeting,'bot');
+  recordMessage('assistant', greeting, { source:'fallback', reason:'greeting' });
+}
+setLocale((()=>{ try{ return localStorage.getItem('chattia:locale')||'en'; }catch{return 'en';} })());
+langCtrl.addEventListener('click', cycleLocale);
+bootstrapConversation();
+startIntegrityMonitor();
+
+/* ---------- Chat flow ---------- */
 form.addEventListener('submit', async (e)=>{
   e.preventDefault();
-  if (session.terminated) return;
   if (honeyp?.value.trim()) return; // honeypot
-  if (tTok.dataset.require==='true' || !tTok.value.trim()) return;
+
+  const msg = input.value.trim();
+  if (!msg) return;
+  input.value=''; updateSend();
 
   addMsg(msg,'user');
   recordMessage('user', msg, { source:'web' });
-  input.value=''; updateSend();
 
-  state.conversation.push({role:'user',content:msg});
-  const typing = addMsg('…','bot');
+  const thinking = addMsg('…','bot');
 
   try{
-    const sanitized = sanitizedMessages();
-    const trainingWindow = recentSanitized(6);
     const payload = {
-      messages: sanitized,
-      training_memory: trainingWindow,
-      metadata:{
-        channel:'chattia-web',
-        locale: currentLang(),
-        memory_key: MEMORY_KEY,
-        memory_window: state.conversation.length,
-        confidence_threshold: CONFIDENCE_THRESHOLD
-      }
+      messages: state.conversation.map(m => ({ role:m.role, content:m.content })),
+      metadata:{ channel:'chattia-web', locale: currentLang() }
     };
-    const turnToken = turnstileToken?.value?.trim(); if (turnToken) payload['cf-turnstile-response'] = turnToken;
 
-    const r = await signedPost('/api/chat', payload);
-    if(!r.ok) throw new Error(`chat_failed:${r.status}`);
+    const r = await signedPost(CHAT_PATH, payload);
+    if(!r.ok){
+      markApiDegraded();
+      throw new Error(`chat_failed:${r.status}`);
+    }
     const j = await r.json();
-    const reply = (j.reply || '').trim();
-    const confidence = typeof j.confidence === 'number' ? j.confidence : null;
-    const shouldEscalate = j.escalate === true || !reply || (confidence !== null && confidence < CONFIDENCE_THRESHOLD);
+    const reply = (j.reply||'').trim();
+
+    // escalate if low confidence or empty
+    const confidence = (j.confidence||'').toLowerCase();
+    const shouldEscalate = !reply || confidence === 'low';
     if (shouldEscalate){
-      escalateWithFallback('low_confidence', msg, thinking, { confidence, upstreamReply: reply });
+      const fb = fallbackReply(msg);
+      thinking.textContent = fb;
+      recordMessage('assistant', fb, { source:'fallback', reason:'low_confidence', upstreamReply: reply||null, confidence });
+      // notify CF Worker for telemetry
+      try{
+        fetch(ESCALATION_URL, {
+          method:'POST',
+          headers:{ ...sharedIntegrityHeaders, 'Content-Type':'application/json' },
+          body: JSON.stringify({ reason:'low_confidence', confidence, userText: msg, fallback: fb, timestamp: new Date().toISOString() })
+        });
+      }catch{}
     } else {
       thinking.textContent = reply;
       recordMessage('assistant', reply, { source:'api', confidence });
     }
-
+    clearApiDegraded();
+    refreshStatusBanner('gatewayReady', { ttl: getSummaryTtl(integrityState.summary) ?? 'N/A' });
   }catch(err){
-    escalateWithFallback('network_error', msg, thinking, { error: err?.message || 'unknown_error' });
-  }finally{
-    state.isSending = false; updateSend();
-    window.chattiaTurnstile?.clear(true);
-    window.chattiaTurnstile?.resetWidget?.();
-  }
-});
-
-/* ------------------- Hidden STT wiring ------------------- */
-const $ = s=>document.querySelector(s);
-const chatInput = $('#chatbot-input');
-
-$('#stt-send')?.addEventListener('click', async ()=>{
-  const f = $('#stt-file')?.files?.[0]; if (!f) return;
-  if (tTok.dataset.require==='true' || !tTok.value.trim()) return;
-  const form = new FormData(); form.append('audio', f); form.append('lang',$('#stt-lang').value||'en'); form.append('prefer',$('#stt-prefer').value||'');
-  form.set('cf-turnstile-response', tTok.value);
-  const r = await signedFormPost(STT_PATH, form); const d = await r.json();
-  if (r.ok && d?.text && chatInput) chatInput.value = d.text;
-  tTok.value=''; tTok.dataset.require='true';
-  if (window.turnstile && turnstileWidgetId!==null) try{ window.turnstile.reset(turnstileWidgetId); }catch{}
-});
-
-let rec, media, chunks=[], recording=false;
-$('#mic-btn')?.addEventListener('click', async ()=>{
-  if (!recording){
-    if (tTok.dataset.require==='true' || !tTok.value.trim()) return;
+    markApiDegraded();
+    const fb = fallbackReply(msg);
+    thinking.textContent = fb;
+    recordMessage('assistant', fb, { source:'fallback', reason:'network_error', error: String(err?.message||'error') });
+    refreshStatusBanner('apiDegraded');
     try{
-      chunks=[]; media=await navigator.mediaDevices.getUserMedia({audio:true});
-      rec=new MediaRecorder(media,{mimeType:'audio/webm'}); rec.ondataavailable=e=>{ if(e.data&&e.data.size) chunks.push(e.data); }; rec.start(); recording=true;
-    }catch{ return; }
-    return;
+      fetch(ESCALATION_URL, {
+        method:'POST',
+        headers:{ ...sharedIntegrityHeaders, 'Content-Type':'application/json' },
+        body: JSON.stringify({ reason:'network_error', userText: msg, fallback: fb, timestamp: new Date().toISOString() })
+      });
+    }catch{}
+  }finally{
+    updateSend();
   }
-  rec.stop(); media.getTracks().forEach(t=>t.stop()); recording=false;
-  const blob = new Blob(chunks,{type:'audio/webm'}); if (blob.size>8_000_000) return;
-  const form = new FormData(); form.append('audio', blob,'clip.webm'); form.append('lang',$('#stt-lang').value||'en'); form.append('prefer',$('#stt-prefer').value||''); form.set('cf-turnstile-response', tTok.value);
-  const r = await signedFormPost(STT_PATH, form); const d = await r.json();
-  if (r.ok && d?.text && chatInput) chatInput.value = d.text;
-  tTok.value=''; tTok.dataset.require='true';
-  if (window.turnstile && turnstileWidgetId!==null) try{ window.turnstile.reset(turnstileWidgetId); }catch{}
 });
+
+input.addEventListener('input', updateSend);
+updateSend();
 </script>
 </body>
 </html>
