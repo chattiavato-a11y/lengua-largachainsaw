@@ -10,6 +10,9 @@ const BASE_ALLOWED_ORIGINS = ["https://chattiavato-a11y.github.io"];
 const DEFAULT_INTEGRITY_PROTOCOLS = "CORS,CSP,OPS-CySec-Core,CISA,NIST,PCI-DSS,SHA-384,SHA-512";
 const DEFAULT_HONEYPOT_FIELDS = ["hp_email","hp_name","hp_field","honeypot","hp_text","botcheck","bot_field","trap_field","company"];
 const HONEYPOT_BLOCK_TTL_SECONDS = 86400; // 24h
+const CHANNELLA_HEADER = "X-OPS-Channella";
+const DEFAULT_CHANNELLA_KEY = "ops-channella-v1";
+const SESSION_NONCE_PATTERN = /^[a-f0-9]{32}$/;
 
 /* ---------- Governance ---------- */
 const SYSTEM_PROMPT =
@@ -802,6 +805,94 @@ function applySecurityHeaders(resp, req, env){
 
 function resolveIntegrityGateway(env){ const c = (env.INTEGRITY_GATEWAY||"").trim(); return c || DEFAULT_INTEGRITY_GATEWAY; }
 function resolveIntegrityProtocols(env){ const c = (env.INTEGRITY_PROTOCOLS||"").trim(); return c || DEFAULT_INTEGRITY_PROTOCOLS; }
+function resolveIntegrityValue(env){ const c = (env.INTEGRITY_VALUE||env.INTEGRITY_TOKEN||"").trim(); return c || DEFAULT_INTEGRITY_VALUE; }
+function resolveChannellaCanonical(env){
+  const configured = (env.CHANNELLA_CANONICAL || env.CHANNELLA_KEY || env.CHANNELLA || "").trim();
+  if (configured) return configured;
+  const derived = resolveIntegrityGateway(env).replace(/^https?:\/\//i, "").replace(/[^a-z0-9]+/gi, "-").replace(/(^-|-$)/g, "");
+  return derived ? `ops-channella:${derived}` : DEFAULT_CHANNELLA_KEY;
+}
+function resolveHighConfidenceUrl(env){
+  const c = (env.HIGH_CONFIDENCE_URL || env.HIGH_CONFIDENCE_GATEWAY || env.HIGH_CONFIDENCE_ENDPOINT || "").trim();
+  return c || DEFAULT_HIGH_CONFIDENCE_URL;
+}
+
+function normalizeUrlish(v){ return (v||"").trim().replace(/\/+$/g, "").toLowerCase(); }
+function normalizeProtocols(v){
+  if (!v) return "";
+  return v.split(",").map(s=>s.trim().toLowerCase()).filter(Boolean).join(",");
+}
+
+function enforceIntegrityHeadersOnly(request, env){
+  const headers = request.headers;
+  const fail = (error) => json({ error }, 403, { "cache-control":"no-store" });
+
+  const integrity = (headers.get("x-integrity") || "").trim();
+  if (!integrity) return fail("missing_integrity_header");
+  if (integrity !== resolveIntegrityValue(env)) return fail("invalid_integrity_value");
+
+  const gwHeader = (headers.get("x-integrity-gateway") || "").trim();
+  if (!gwHeader) return fail("missing_integrity_gateway");
+  if (normalizeUrlish(gwHeader) !== normalizeUrlish(resolveIntegrityGateway(env))) return fail("invalid_integrity_gateway");
+
+  const protoHeader = (headers.get("x-integrity-protocols") || "").trim();
+  if (!protoHeader) return fail("missing_integrity_protocols");
+  if (normalizeProtocols(protoHeader) !== normalizeProtocols(resolveIntegrityProtocols(env))) return fail("invalid_integrity_protocols");
+
+  const channellaHeader = (headers.get("x-integrity-key") || headers.get(CHANNELLA_HEADER) || "").trim();
+  if (!channellaHeader) return fail("missing_channella");
+  if (channellaHeader !== resolveChannellaCanonical(env)) return fail("invalid_channella");
+
+  const sessionNonce = (headers.get("x-session-nonce") || "").trim().toLowerCase();
+  if (!SESSION_NONCE_PATTERN.test(sessionNonce)) return fail("invalid_session_nonce");
+
+  return null;
+}
+
+async function enforceIntegrity(request, env, expectedPath){
+  const headerGate = enforceIntegrityHeadersOnly(request, env);
+  if (headerGate) return headerGate;
+  if (!env.SHARED_KEY) return json({ error:"integrity_service_unavailable" }, 503, {"cache-control":"no-store"});
+
+  const signature = (request.headers.get("x-request-signature") || "").trim();
+  const tsHeader = request.headers.get("x-request-timestamp");
+  const nonce = (request.headers.get("x-request-nonce") || "").trim().toLowerCase();
+  if (!signature) return json({ error:"missing_signature" }, 403, {"cache-control":"no-store"});
+  if (!tsHeader) return json({ error:"missing_signature_timestamp" }, 403, {"cache-control":"no-store"});
+  if (!nonce || !SESSION_NONCE_PATTERN.test(nonce)) return json({ error:"invalid_signature_nonce" }, 403, {"cache-control":"no-store"});
+
+  const ts = Number(tsHeader);
+  const now = Math.floor(Date.now()/1000);
+  const ttl = getSignatureTtl(env);
+  if (!Number.isFinite(ts)) return json({ error:"invalid_signature_timestamp" }, 403, {"cache-control":"no-store"});
+  if (ts > now + 5 || now - ts > ttl) return json({ error:"signature_expired" }, 403, {"cache-control":"no-store","x-sig-ttl":String(ttl)});
+
+  const url = new URL(request.url);
+  const method = request.method.toUpperCase();
+  const path = url.pathname;
+  if (expectedPath && path !== expectedPath) return json({ error:"signature_path_mismatch" }, 403, {"cache-control":"no-store"});
+
+  const bodySha = await sha256HexOfRequest(request.clone());
+  const canonical = `${ts}.${nonce}.${method}.${path}.${bodySha}`;
+  const expectedSig = await hmacSha512B64(env.SHARED_KEY, canonical);
+  if (!timingSafeEqual(signature, expectedSig)) return json({ error:"invalid_signature" }, 403, {"cache-control":"no-store"});
+
+  if (env.OPS_NONCE_KV){
+    const cacheKey = `use:${nonce}:${ts}`;
+    const seen = await env.OPS_NONCE_KV.get(cacheKey);
+    if (seen) return json({ error:"signature_replay" }, 409, {"cache-control":"no-store"});
+    await env.OPS_NONCE_KV.put(cacheKey, "1", { expirationTtl: ttl });
+  }
+
+  return null;
+}
+
+function timingSafeEqual(a,b){
+  if (!a || !b || a.length !== b.length) return false;
+  let mismatch = 0;
+  for (let i=0; i<a.length; i++) mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return mismatch === 0;
+}
 
 function getAllowedOrigin(origin, env){
   if (!origin) return null;
