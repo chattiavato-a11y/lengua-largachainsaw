@@ -97,6 +97,25 @@ const INTEGRITY_VALUE   = (document.querySelector('meta[name="integrity-token"]'
 const CF_WORKER_URL = 'https://withered-mouse-9aee.grabem-holdem-nuts-right.workers.dev/';
 const INTEGRITY_GATEWAY = CF_WORKER_URL.replace(/\/$/, '');
 const INTEGRITY_PROTOCOLS = 'CORS,CSP,OPS-CySec-Core,CISA,NIST,PCI-DSS,SHA-384,SHA-512';
+const CHANNELLA_HEADER = 'X-OPS-Channella';
+const CHANNELLA_CANONICAL = 'ops-channella-v1';
+
+function randomHex(bytes = 16){
+  try {
+    const view = new Uint8Array(bytes);
+    const cryptoObj = (typeof window !== 'undefined' && window.crypto)
+      ? window.crypto
+      : (typeof crypto !== 'undefined' ? crypto : null);
+    if (cryptoObj?.getRandomValues) {
+      cryptoObj.getRandomValues(view);
+      return Array.from(view, b => b.toString(16).padStart(2,'0')).join('');
+    }
+  } catch {}
+  let fallback = '';
+  for (let i=0;i<bytes;i++) fallback += Math.floor(Math.random()*256).toString(16).padStart(2,'0');
+  return fallback;
+}
+const SESSION_NONCE = randomHex(16);
 
 const API_BASE = INTEGRITY_GATEWAY;           // single Worker handles auth+chat+stt
 const CHAT_PATH = '/api/chat';
