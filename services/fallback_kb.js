@@ -13,26 +13,10 @@
       focusEs: "Profesionales remotos que ofrecen operaciones de negocio, contact center, soporte de TI y especialistas bajo demanda."
     },
     servicePillars: [
-      {
-        name: "Business Operations",
-        summary: "Playbooks that preserve the financial hygiene, billing accuracy, procurement visibility, stakeholder updates, and executive dashboards.",
-        summaryEs: "Playbooks que preservan la higiene financiera, la precisión de facturación, la visibilidad de compras, las actualizaciones a stakeholders y los tableros ejecutivos."
-      },
-      {
-        name: "Contact Center (Beta)",
-        summary: "Relationship-first omni-channel agents that combine sentiment cues with refreshed knowledge bases for rapid resolution.",
-        summaryEs: "Agentes omnicanal centrados en la relación que combinan señales de sentimiento con bases de conocimiento actualizadas para una resolución rápida."
-      },
-      {
-        name: "IT Support (Beta)",
-        summary: "Incident-ready pods with documented triage, integrated telemetry, and continuity alignment across help desk tiers I–II.",
-        summaryEs: "Pods listos para incidentes con triaje documentado, telemetría integrada y alineación de continuidad en los niveles I–II de mesa de ayuda."
-      },
-      {
-        name: "Professionals",
-        summary: "Insight teams providing predictive analytics, feedback frameworks, and growth-focused engagement models.",
-        summaryEs: "Equipos de insights que entregan analítica predictiva, marcos de retroalimentación y modelos de engagement orientados al crecimiento."
-      }
+      { name: "Business Operations", summary: "Playbooks that preserve the financial hygiene, billing accuracy, procurement visibility, stakeholder updates, and executive dashboards." },
+      { name: "Contact Center (Beta)", summary: "Relationship-first omni-channel agents that combine sentiment cues with refreshed knowledge bases for rapid resolution." },
+      { name: "IT Support (Beta)", summary: "Incident-ready pods with documented triage, integrated telemetry, and continuity alignment across help desk tiers I–II." },
+      { name: "Professionals", summary: "Insight teams providing predictive analytics, feedback frameworks, and growth-focused engagement models." }
     ],
     solutions: [
       {
@@ -101,39 +85,11 @@
     "¡Hola! ¿Prefieres un resumen o más detalle? Yo me adapto."
   ];
 
-  function getFocus(lang){
-    return lang==='es'
-      ? SERVICE_DIRECTORY.overview.focusEs || SERVICE_DIRECTORY.overview.focus
-      : SERVICE_DIRECTORY.overview.focus;
-  }
-  function getPillars(lang){
-    return (SERVICE_DIRECTORY.servicePillars||[]).map(p => {
-      const summary = lang==='es' ? (p.summaryEs || p.summary) : p.summary;
-      return `${p.name} — ${summary}`;
-    });
-  }
-  function getSolutions(lang){
-    return (SERVICE_DIRECTORY.solutions||[]).map(s => {
-      const coverage = lang==='es' ? (s.coverageEs || s.coverage) : s.coverage;
-      return `${s.name} — ${coverage}`;
-    });
-  }
-  function getProofPoints(lang){
-    return lang==='es'
-      ? SERVICE_DIRECTORY.proofPointsEs || SERVICE_DIRECTORY.proofPoints
-      : SERVICE_DIRECTORY.proofPoints;
-  }
-  function getContactPaths(lang){
-    return lang==='es'
-      ? SERVICE_DIRECTORY.contactPathwaysEs || SERVICE_DIRECTORY.contactPathways
-      : SERVICE_DIRECTORY.contactPathways;
-  }
-
   const KB = [
     {
       id:"overview.en", lang:"en",
       q: /(what\s+is|who\s+are|about|overview|summary|intro|explain)\b|^ops\b|^chattia\b/i,
-      a: () => `${SERVICE_DIRECTORY.overview.name} — ${getFocus("en")}
+      a: () => `${SERVICE_DIRECTORY.overview.name} — ${SERVICE_DIRECTORY.overview.focus}
 Pillars:
 • ${getPillars("en").join("\n• ")}
 Proof points: ${getProofPoints("en").join("; ")}.`
@@ -141,42 +97,57 @@ Proof points: ${getProofPoints("en").join("; ")}.`
     {
       id:"overview.es", lang:"es",
       q: /(qué\s+es|quiénes\s+son|acerca|resumen|introducción|explica|explicación)\b|^ops\b|^chattia\b/i,
-      a: () => `${SERVICE_DIRECTORY.overview.name} — ${getFocus("es")}
+      a: () => `${SERVICE_DIRECTORY.overview.name} — ${SERVICE_DIRECTORY.overview.focus}
 Pilares:
-• ${getPillars("es").join("\n• ")}
-Resultados: ${getProofPoints("es").join("; ")}.`
+• ${SERVICE_DIRECTORY.servicePillars[0].name} — ${SERVICE_DIRECTORY.servicePillars[0].summary}
+• ${SERVICE_DIRECTORY.servicePillars[1].name} — ${SERVICE_DIRECTORY.servicePillars[1].summary}
+• ${SERVICE_DIRECTORY.servicePillars[2].name} — ${SERVICE_DIRECTORY.servicePillars[2].summary}
+• ${SERVICE_DIRECTORY.servicePillars[3].name} — ${SERVICE_DIRECTORY.servicePillars[3].summary}
+Resultados: ${SERVICE_DIRECTORY.proofPoints.join("; ")}.`
     },
     { id:"pillars.en", lang:"en", q:/\b(pillars?|areas|capabilities|services|what\s+do\s+you\s+offer)\b/i,
       a:()=> `Service Pillars
-- ${getPillars("en").join("\n- ")}`
+- ${SERVICE_DIRECTORY.servicePillars[0].name}: ${SERVICE_DIRECTORY.servicePillars[0].summary}
+- ${SERVICE_DIRECTORY.servicePillars[1].name}: ${SERVICE_DIRECTORY.servicePillars[1].summary}
+- ${SERVICE_DIRECTORY.servicePillars[2].name}: ${SERVICE_DIRECTORY.servicePillars[2].summary}
+- ${SERVICE_DIRECTORY.servicePillars[3].name}: ${SERVICE_DIRECTORY.servicePillars[3].summary}`
     },
     { id:"pillars.es", lang:"es", q:/\b(pilares?|áreas|capacidades|servicios|qué\s+ofrecen|ofrecen)\b/i,
       a:()=> `Pilares de Servicio
-- ${getPillars("es").join("\n- ")}`
+- ${SERVICE_DIRECTORY.servicePillars[0].name}: ${SERVICE_DIRECTORY.servicePillars[0].summary}
+- ${SERVICE_DIRECTORY.servicePillars[1].name}: ${SERVICE_DIRECTORY.servicePillars[1].summary}
+- ${SERVICE_DIRECTORY.servicePillars[2].name}: ${SERVICE_DIRECTORY.servicePillars[2].summary}
+- ${SERVICE_DIRECTORY.servicePillars[3].name}: ${SERVICE_DIRECTORY.servicePillars[3].summary}`
     },
     { id:"solutions.en", lang:"en", q:/\b(solutions?|catalog|packages|what\s+problems|use\s+cases|examples)\b/i,
       a:()=> `Solutions
-• ${getSolutions("en").join("\n• ")}`
+• ${SERVICE_DIRECTORY.solutions[0].name} — ${SERVICE_DIRECTORY.solutions[0].coverage}
+• ${SERVICE_DIRECTORY.solutions[1].name} — ${SERVICE_DIRECTORY.solutions[1].coverage}
+• ${SERVICE_DIRECTORY.solutions[2].name} — ${SERVICE_DIRECTORY.solutions[2].coverage}
+• ${SERVICE_DIRECTORY.solutions[3].name} — ${SERVICE_DIRECTORY.solutions[3].coverage}`
     },
     { id:"solutions.es", lang:"es", q:/\b(soluciones?|catálogo|paquetes|casos\s+de\s+uso|ejemplos)\b/i,
       a:()=> `Soluciones
-• ${getSolutions("es").join("\n• ")}`
+• ${SERVICE_DIRECTORY.solutions[0].name} — ${SERVICE_DIRECTORY.solutions[0].coverage}
+• ${SERVICE_DIRECTORY.solutions[1].name} — ${SERVICE_DIRECTORY.solutions[1].coverage}
+• ${SERVICE_DIRECTORY.solutions[2].name} — ${SERVICE_DIRECTORY.solutions[2].coverage}
+• ${SERVICE_DIRECTORY.solutions[3].name} — ${SERVICE_DIRECTORY.solutions[3].coverage}`
     },
     { id:"proof.en", lang:"en", q:/\b(results?|metrics|proof|sla|availability|uptime|speed|security|compliance|nist|cisa|pci|soc2|gdpr|ccpa)\b/i,
       a:()=> `Operational Proof Points
-- ${getProofPoints("en").join("\n- ")}`
+- ${SERVICE_DIRECTORY.proofPoints.join("\n- ")}`
     },
     { id:"proof.es", lang:"es", q:/\b(resultados?|métricas|pruebas|sla|disponibilidad|seguridad|cumplimiento|nist|cisa|pci|soc2|gdpr|ccpa)\b/i,
       a:()=> `Pruebas Operativas
-- ${getProofPoints("es").join("\n- ")}`
+- ${SERVICE_DIRECTORY.proofPoints.join("\n- ")}`
     },
     { id:"contact.en", lang:"en", q:/\b(contact|reach|call|book|consult|hire|talk|email|phone|discovery)\b/i,
       a:()=> `Contact & Hiring Paths
-- ${getContactPaths("en").join("\n- ")}
+- ${SERVICE_DIRECTORY.contactPathways.join("\n- ")}
 Share your context and preferred times; we reply within one business day.` },
     { id:"contact.es", lang:"es", q:/\b(contacto|llamar|agendar|consulta|contratar|hablar|correo|teléfono|descubrimiento)\b/i,
       a:()=> `Rutas de Contacto y Contratación
-- ${getContactPaths("es").join("\n- ")}
+- ${SERVICE_DIRECTORY.contactPathways.join("\n- ")}
 Cuéntanos tu contexto y horarios; respondemos dentro de un día hábil.` }
   ];
 

@@ -1,5 +1,5 @@
 // src/worker.js — Integrity Gateway + Chat + STT + Escalation (single Worker)
-import { SERVICE_DIRECTORY, SERVICE_DIRECTORY_PROMPTS } from "../services/directory.js";
+import { SERVICE_DIRECTORY, SERVICE_DIRECTORY_PROMPT } from "../services/directory.js";
 
 /* ---------- Config ---------- */
 const MODEL_ID = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
@@ -16,33 +16,9 @@ const SYSTEM_PROMPT =
   "Deliver concise, actionable answers aligned with OPS Core CyberSec governance. Provide step-by-step help when useful, " +
   "call out safety cautions, respect accessibility and privacy expectations, and tie every insight back to the OPS Remote " +
   "Professional Network service directory pillars or solutions when relevant.";
-const SYSTEM_PROMPT_ES =
-  "Eres Chattia, una asistente empática y consciente de la seguridad que se comunica con claridad e inclusión. " +
-  "Entrega respuestas concisas y accionables alineadas con la gobernanza OPS Core CyberSec. Explica paso a paso cuando sea útil, " +
-  "menciona precauciones de seguridad, respeta la accesibilidad y la privacidad, y relaciona cada idea con los pilares o soluciones " +
-  "de la OPS Remote Professional Network cuando corresponda.";
-const SYSTEM_PROMPTS = Object.freeze({ en: SYSTEM_PROMPT, es: SYSTEM_PROMPT_ES });
-const LANGUAGE_PROMPTS = Object.freeze({
-  en: "Match the user's language preference. Default to English, but seamlessly answer in Spanish whenever they write in Spanish, keeping OPS terminology consistent.",
-  es: "Respeta el idioma preferido de la persona. Responde en español latinoamericano cuando escriba en español y cambia a inglés solo si ella lo solicita, conservando la terminología OPS."
-});
-const DEFAULT_FAILURE_REPLIES = Object.freeze({
-  en: "I’m unable to respond right now.",
-  es: "No puedo responder en este momento."
-});
-const WARNING_MESSAGES = Object.freeze({
-  en: "Apologies, but I cannot execute that request, do you have any questions about our website?",
-  es: "Disculpa, no puedo ejecutar esa solicitud. ¿Tienes alguna pregunta sobre nuestro sitio?"
-});
-const TERMINATE_MESSAGES = Object.freeze({
-  en: "Apologies, but I must not continue with this chat and I must end this session.",
-  es: "Disculpa, no puedo continuar con esta conversación y debo terminar la sesión."
-});
-const WARNING_MESSAGE   = WARNING_MESSAGES.en;
-const TERMINATE_MESSAGE = TERMINATE_MESSAGES.en;
-const ALL_WARNING_MESSAGES = Object.values(WARNING_MESSAGES);
-const ALL_TERMINATE_MESSAGES = Object.values(TERMINATE_MESSAGES);
-const ALL_GUARD_MESSAGES = [...ALL_WARNING_MESSAGES, ...ALL_TERMINATE_MESSAGES];
+
+const WARNING_MESSAGE   = "Apologies, but I cannot execute that request, do you have any questions about our website?";
+const TERMINATE_MESSAGE = "Apologies, but I must not continue with this chat and I must end this session.";
 const MALICIOUS_PATTERNS = [/<[^>]*>/i,/script/i,/malicious/i,/attack/i,/ignore/i,/prompt/i,/hack/i,/drop\s+table/i];
 const WEBSITE_KEYWORDS   = ["website","site","chattia","product","service","support","order","account","pricing","contact","help"];
 
@@ -586,25 +562,30 @@ function getDefaultReply(locale){
 }
 
 function buildWebsiteKb(){
-  const docs = [];
-  pushDocVariants(docs, {
-    id: "ops-hero",
-    titleEn: "OPS Website — Hero",
-    titleEs: "OPS Website — Hero",
-    contentEn: "Ops Online Support helps teams keep momentum by handling operations so you can focus on growth.",
-    contentEs: "Ops Online Support ayuda a los equipos a mantener el impulso al hacerse cargo de las operaciones para que puedan enfocarse en crecer.",
-    summaryEn: "Ops Online Support keeps you moving by handling operations so your team can focus on growth.",
-    summaryEs: "Ops Online Support mantiene tu impulso gestionando operaciones para que tu equipo se concentre en crecer."
-  });
-  pushDocVariants(docs, {
-    id: "ops-pillars",
-    titleEn: "Service pillars",
-    titleEs: "Pilares de servicio",
-    contentEn: "Service pillars: Business Operations, Contact Center, IT Support, Professionals On-Demand.",
-    contentEs: "Pilares de servicio: Operaciones de Negocio, Contact Center, Soporte TI y Profesionales On-Demand.",
-    summaryEn: "Our pillars: Business Operations, Contact Center, IT Support, and Professionals On-Demand.",
-    summaryEs: "Nuestros pilares: Operaciones de Negocio, Contact Center, Soporte TI y Profesionales On-Demand."
-  });
+  const docs = [
+    {
+      id: "ops-hero",
+      lang: "en",
+      title: "OPS Website — Hero",
+      content:
+        "Ops Online Support helps teams keep momentum by handling operations so you can focus on growth.",
+      summaryEn:
+        "Ops Online Support keeps you moving by handling operations so your team can focus on growth.",
+      summaryEs:
+        "Ops Online Support mantiene tu impulso gestionando operaciones para que tu equipo se enfoque en crecer."
+    },
+    {
+      id: "ops-pillars",
+      lang: "en",
+      title: "Service pillars",
+      content:
+        "Service pillars: Business Operations, Contact Center, IT Support, Professionals On-Demand.",
+      summaryEn:
+        "Our pillars: Business Operations, Contact Center, IT Support, and Professionals On-Demand.",
+      summaryEs:
+        "Nuestros pilares: Operaciones de Negocio, Contact Center, Soporte TI y Profesionales On-Demand."
+    }
+  ];
 
   docs.push(...buildServiceDirectoryDocs());
   return docs;
@@ -690,32 +671,28 @@ function buildServiceDirectoryDocs(){
   return docs;
 }
 
-function pushDocVariants(collection, config){
-  if (!collection || !config) return;
-  const summaryEn = config.summaryEn || config.contentEn || "";
-  const summaryEs = config.summaryEs || config.contentEs || summaryEn;
-  collection.push({
-    id: `${config.id}-en`,
-    lang: "en",
-    title: config.titleEn || config.title || config.id,
-    content: config.contentEn || config.content || summaryEn,
-    summaryEn,
-    summaryEs
-  });
-  collection.push({
-    id: `${config.id}-es`,
-    lang: "es",
-    title: config.titleEs || config.titleEn || config.title || config.id,
-    content: config.contentEs || config.contentEn || config.content || summaryEs,
-    summaryEn,
-    summaryEs
-  });
+function translatePillarSummary(name, fallback){
+  const dict = {
+    "Business Operations": "Operaciones de Negocio: playbooks que preservan la higiene financiera, facturación y tableros ejecutivos.",
+    "Contact Center (Beta)": "Contact Center (Beta): agentes omnicanal con señales de sentimiento y bases de conocimiento actualizadas.",
+    "IT Support (Beta)": "Soporte TI (Beta): pods listos para incidentes con triaje documentado, telemetría integrada y continuidad.",
+    "Professionals": "Profesionales: equipos de insights con analítica predictiva y marcos de retroalimentación orientados al crecimiento."
+  };
+  return dict[name] || fallback;
 }
-
+function translateSolutionSummary(name, fallback){
+  const dict = {
+    "Business Operations": "Cobertura de facturación, cuentas por pagar/cobrar, coordinación de proveedores, soporte administrativo y marketing.",
+    "Contact Center (Beta)": "CX multicanal orientado a relaciones con resolución rápida.",
+    "IT Support (Beta)": "Soporte TI integral con mesa de ayuda, tickets e incidentes.",
+    "Professionals On Demand": "Asistentes y especialistas desplegables para sprints o compromisos prolongados."
+  };
+  return dict[name] || fallback;
+}
 function slugifyId(input){ return String(input||"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/(^-|-$)/g,""); }
 
 /* ============================ Confidence ============================ */
-function assessConfidence(reply, ai, locale){
+function assessConfidence(reply, ai){
   const t = (reply||"").trim();
   if (!t) return {level:"low", reasons:["empty"]};
   const lower = t.toLowerCase();
