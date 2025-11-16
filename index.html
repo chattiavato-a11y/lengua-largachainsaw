@@ -215,16 +215,7 @@ body[data-theme="light"] #chatbot-input::placeholder{color:#6b5d84;}
   </div>
 </div>
 
-<!-- Hidden STT wiring (file + mic). Toggle display via CSS if you want to show it. -->
-<div id="stt-controls">
-  <input id="stt-file" type="file" accept="audio/*">
-  <select id="stt-lang"><option value="en" selected>en</option><option value="es">es</option></select>
-  <select id="stt-prefer"><option value="">auto</option><option>tiny</option><option>base</option><option>turbo</option><option>vendor</option></select>
-  <button id="stt-send" type="button">Transcribe file</button>
-  <button id="mic-btn" type="button">🎙 Start</button>
-  <pre id="stt-out"></pre>
-</div>
-
+<script src="services/fallback_kb.js"></script>
 <script>
 /* ------------------- CONFIG (match Worker) ------------------- */
 const INTEGRITY_VALUE   = (document.querySelector('meta[name="integrity-token"]')?.content||'').trim() || 'https://chattiavato-a11y.github.io';
@@ -243,6 +234,11 @@ const sharedIntegrityHeaders = Object.freeze({
   'X-Integrity-Gateway': INTEGRITY_GATEWAY,
   'X-Integrity-Protocols': INTEGRITY_PROTOCOLS
 });
+const TURNSTILE_SITE_KEY = '0x4AAAAAACBDyXYbdQg180H4';
+const ESCALATION_URL = `${INTEGRITY_GATEWAY.replace(/\/$/, '')}/fallback/escalate`;
+const CONFIDENCE_THRESHOLD = 0.55;
+const MEMORY_KEY = 'chattia.memory.v1';
+const MEMORY_WINDOW = 40;
 
 /* ------------------- UI refs ------------------- */
 const logEl  = document.querySelector('#chat-log');
@@ -286,45 +282,91 @@ themeCtrl?.addEventListener('click', ()=>{
   storeTheme(next);
 });
 
-const handleThemeChange = (evt)=>{
-  if (readStoredTheme()) return;
-  applyTheme(evt.matches ? 'dark' : 'light');
-};
-if (typeof prefersDark.addEventListener === 'function'){
-  prefersDark.addEventListener('change', handleThemeChange);
-}else if (typeof prefersDark.addListener === 'function'){
-  prefersDark.addListener(handleThemeChange);
+function currentLang(){
+  const lng = (document.documentElement.lang || 'en').toLowerCase();
+  return lng.startsWith('es') ? 'es' : 'en';
+}
+function fallbackReply(userText){
+  try {
+    if (window.FallbackKB?.reply) {
+      return window.FallbackKB.reply(userText || '', currentLang());
+    }
+  } catch {}
+  return currentLang()==='es'
+    ? 'Estoy fuera de línea, pero puedo contarte sobre OPS Remote Professional Network.'
+    : 'I’m offline but can still summarize the OPS Remote Professional Network.';
+}
+function validMemoryEntry(entry){
+  return entry && typeof entry === 'object' && typeof entry.role === 'string' && typeof entry.content === 'string';
+}
+function loadMemory(){
+  try {
+    const raw = localStorage.getItem(MEMORY_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(validMemoryEntry).slice(-MEMORY_WINDOW);
+  } catch {
+    return [];
+  }
+}
+function persistMemory(){
+  try {
+    localStorage.setItem(MEMORY_KEY, JSON.stringify(state.conversation.slice(-MEMORY_WINDOW)));
+  } catch {}
+}
+function recordMessage(role, content, meta = {}){
+  state.conversation.push({ role, content, meta, ts: Date.now() });
+  if (state.conversation.length > MEMORY_WINDOW) {
+    state.conversation = state.conversation.slice(-MEMORY_WINDOW);
+  }
+  persistMemory();
+}
+function replayHistory(history){
+  history.forEach(msg => addMsg(msg.content, msg.role === 'user' ? 'user' : 'bot'));
+}
+function bootstrapConversation(){
+  const history = loadMemory();
+  if (history.length){
+    state.conversation = history;
+    replayHistory(history);
+    return;
+  }
+  const greeting = fallbackReply('');
+  addMsg(greeting,'bot');
+  recordMessage('assistant', greeting, { source:'fallback', reason:'greeting' });
+}
+function notifyEscalation(details = {}){
+  const payload = { ...details, lang: currentLang(), conversationTail: state.conversation.slice(-6) };
+  try {
+    fetch(ESCALATION_URL, {
+      method:'POST',
+      headers:{ ...sharedIntegrityHeaders, 'Content-Type':'application/json' },
+      body: JSON.stringify({ ...payload, timestamp: new Date().toISOString() })
+    }).catch(()=>{});
+  } catch {}
+}
+function escalateWithFallback(reason, userText, thinkingEl, extra = {}){
+  const fallback = fallbackReply(userText);
+  thinkingEl.textContent = fallback;
+  recordMessage('assistant', fallback, { source:'fallback', reason, ...extra });
+  notifyEscalation({ reason, userText, fallback, ...extra });
 }
 
-function addMsg(t,cls){ const d=document.createElement('div'); d.className='chat-msg '+cls; d.textContent=t; logEl.appendChild(d); logEl.scrollTop=logEl.scrollHeight; return d; }
-function sanitize(s=''){ return s.replace(/[<>]/g,'').replace(/\s+/g,' ').trim(); }
-function violatesPolicy(text){
-  const lower = text.toLowerCase();
-  const bad = [/^.*(<[^>]+>|script|malicious|attack|prompt|ignore|hack|drop\s+table).*$/i].some(rx=>rx.test(lower));
-  const onTopic = ["website","site","chattia","product","service","support","order","account","pricing","contact","help"].some(w=>lower.includes(w));
-  return bad || !onTopic;
+function sanitizedMessages(){
+  return state.conversation.map(item => ({ role: item.role, content: item.content }));
 }
 
-/* ------------------- Turnstile (hidden) ------------------- */
-let turnstileWidgetId = null;
-function loadTurnstile(){
-  if (!tSlot || document.getElementById('cf-turnstile')) return;
-  const s = document.createElement('script');
-  s.id='cf-turnstile'; s.src='https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit'; s.async=true; s.defer=true;
-  s.onload = () => {
-    if (!window.turnstile) return;
-    const id = window.turnstile.render(tSlot, {
-      sitekey: TURNSTILE_SITE_KEY,
-      theme: 'auto',
-      callback(token){ tTok.value = token; tTok.dataset.require='false'; },
-      'error-callback':()=>{ tTok.value=''; tTok.dataset.require='true'; },
-      'expired-callback':()=>{ tTok.value=''; tTok.dataset.require='true'; }
-    });
-    turnstileWidgetId = id;
-  };
-  document.head.appendChild(s);
+function recentSanitized(count){
+  const slice = state.conversation.slice(-count);
+  return slice.map(item => ({ role: item.role, content: item.content }));
 }
-loadTurnstile();
+
+bootstrapConversation();
+updateSend();
+
+function hexNonce32(){ const u8 = crypto.getRandomValues(new Uint8Array(16)); return [...u8].map(b=>b.toString(16).padStart(2,'0')).join(''); }
+async function sha256Hex(input){ const enc = typeof input==='string'? new TextEncoder().encode(input): input; const view = enc instanceof Uint8Array? enc: new Uint8Array(enc); const d = await crypto.subtle.digest('SHA-256', view); return [...new Uint8Array(d)].map(b=>b.toString(16).padStart(2,'0')).join(''); }
 
 /* ------------------- Integrity signing (browser) ------------------- */
 function hexNonce32(){ const u8=crypto.getRandomValues(new Uint8Array(16)); return [...u8].map(b=>b.toString(16).padStart(2,'0')).join(''); }
@@ -373,28 +415,48 @@ form.addEventListener('submit', async (e)=>{
   if (honeyp?.value.trim()) return; // honeypot
   if (tTok.dataset.require==='true' || !tTok.value.trim()) return;
 
-  const msg = sanitize(input.value);
-  if (!msg) return;
   addMsg(msg,'user');
-  input.value='';
-
-  if (violatesPolicy(msg)) { addMsg("Apologies, but I cannot execute that request, do you have any questions about our website?",'bot'); return; }
+  recordMessage('user', msg, { source:'web' });
+  input.value=''; updateSend();
 
   state.conversation.push({role:'user',content:msg});
   const typing = addMsg('…','bot');
 
   try{
-    const r = await signedPost(CHAT_PATH, { messages: state.conversation, metadata:{ channel:'chattia-web', locale:(document.documentElement.lang||'en') }, 'cf-turnstile-response': tTok.value });
-    const d = await r.json();
-    const reply = (d.reply||'No reply.').trim();
-    typing.textContent = reply;
-    state.conversation.push({role:'assistant',content:reply});
-  }catch{
-    typing.textContent = 'Error: Can’t reach Chattia.';
-  } finally {
-    // Force a fresh token next turn
-    tTok.value=''; tTok.dataset.require='true';
-    if (window.turnstile && turnstileWidgetId!==null) try{ window.turnstile.reset(turnstileWidgetId); }catch{}
+    const sanitized = sanitizedMessages();
+    const trainingWindow = recentSanitized(6);
+    const payload = {
+      messages: sanitized,
+      training_memory: trainingWindow,
+      metadata:{
+        channel:'chattia-web',
+        locale: currentLang(),
+        memory_key: MEMORY_KEY,
+        memory_window: state.conversation.length,
+        confidence_threshold: CONFIDENCE_THRESHOLD
+      }
+    };
+    const turnToken = turnstileToken?.value?.trim(); if (turnToken) payload['cf-turnstile-response'] = turnToken;
+
+    const r = await signedPost('/api/chat', payload);
+    if(!r.ok) throw new Error(`chat_failed:${r.status}`);
+    const j = await r.json();
+    const reply = (j.reply || '').trim();
+    const confidence = typeof j.confidence === 'number' ? j.confidence : null;
+    const shouldEscalate = j.escalate === true || !reply || (confidence !== null && confidence < CONFIDENCE_THRESHOLD);
+    if (shouldEscalate){
+      escalateWithFallback('low_confidence', msg, thinking, { confidence, upstreamReply: reply });
+    } else {
+      thinking.textContent = reply;
+      recordMessage('assistant', reply, { source:'api', confidence });
+    }
+
+  }catch(err){
+    escalateWithFallback('network_error', msg, thinking, { error: err?.message || 'unknown_error' });
+  }finally{
+    state.isSending = false; updateSend();
+    window.chattiaTurnstile?.clear(true);
+    window.chattiaTurnstile?.resetWidget?.();
   }
 });
 
