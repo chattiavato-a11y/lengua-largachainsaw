@@ -51,7 +51,7 @@ body{
 #chatbot-header{ display:flex; align-items:center; gap:.5rem; justify-content:space-between;
   padding:.7rem .9rem; background:linear-gradient(135deg,var(--clr-primary),var(--clr-accent)); color:#fff }
 #chatbot-header h1{ margin:0; font-size:1.05rem }
-.header-actions{ display:flex; gap:.5rem }
+.header-actions{ display:flex; gap:.5rem; align-items:center }
 .ctrl-btn{ background:rgba(255,255,255,.18); border:none; border-radius:999px; color:#fff; padding:.3rem .8rem; font-weight:600;
  cursor:pointer }
 .ctrl-btn:focus-visible{ outline:2px solid #fff; outline-offset:2px }
@@ -101,6 +101,13 @@ body{
   #chatbot-container{ inset:0; width:100vw; height:100vh; border-radius:0 }
   @supports(height:100dvh){ #chatbot-container{height:100dvh} }
   .fab{ right:12px }
+}
+
+@media (max-width:720px){
+  #chatbot-header{ flex-wrap:wrap; align-items:flex-start }
+  .header-actions{ width:100%; justify-content:flex-end; flex-wrap:wrap; gap:.4rem }
+  .ctrl-btn{ padding:.35rem .65rem; font-size:.9rem }
+  .sticky-footer{ display:none }
 }
 </style>
 </head>
