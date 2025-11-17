@@ -155,15 +155,24 @@ Cuéntanos tu contexto y horarios; respondemos dentro de un día hábil.` }
   function detectLang(s, hint){ if(hint) return hint.toLowerCase().startsWith('es')?'es':'en'; return /[áéíóúñü¿¡]/i.test(s)?'es':'en'; }
   function isGreeting(s){ return /\b(hi|hello|hey|howdy|yo|hiya|good\s*(morning|afternoon|evening)|hola|buenas|qué\s*tal)\b/i.test(s); }
 
+  function toResponse(text, lang, matchId=null){
+    const safeText = String(text || "").trim();
+    return { text: safeText || "", lang, matchId };
+  }
+
   function reply(userText, langHint){
     const text = (userText||"").trim();
     const lang = detectLang(text, langHint);
-    if (!text || isGreeting(text)) return pick(lang==='es'?GREET_ES:GREET_EN);
+    if (!text || isGreeting(text)) return toResponse(pick(lang==='es'?GREET_ES:GREET_EN), lang, "greeting");
     const bank = KB.filter(k=>k.lang===lang);
-    for (const item of bank){ if (item.q.test(text)) return item.a(); }
-    return (lang==='es')
-      ? `${SERVICE_DIRECTORY.overview.name} — ${getFocus('es')}`
-      : `${SERVICE_DIRECTORY.overview.name} — ${getFocus('en')}`;
+    for (const item of bank){ if (item.q.test(text)) return toResponse(item.a(), lang, item.id); }
+    return toResponse(
+      lang==='es'
+        ? `${SERVICE_DIRECTORY.overview.name} — ${getFocus('es')}`
+        : `${SERVICE_DIRECTORY.overview.name} — ${getFocus('en')}`,
+      lang,
+      "fallback.overview"
+    );
   }
 
   window.FallbackKB = { reply };

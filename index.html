@@ -16,31 +16,44 @@
   --body-bg:#050111; --body-text:#f4f3ff;
   --surface:#251541; --surface-soft:#220f3a; --surface-alt:#1b0e2d;
   --bot-bg:#321b53; --bot-text:#fff; --user-text:#050118;
-  --control-bg:rgba(255,255,255,0.08)
+  --control-bg:rgba(255,255,255,0.08);
+  --outline-strong:#ffd400;
 }
 body[data-theme="light"]{
   --body-bg:#fdfbff; --body-text:#1b1030;
   --surface:#faf6ff; --surface-alt:#f5edff; --surface-soft:#ece0ff;
-  --bot-bg:#efe7ff; --bot-text:#2d1650; --control-bg:rgba(10,4,32,0.08)
+  --bot-bg:#efe7ff; --bot-text:#2d1650; --control-bg:rgba(10,4,32,0.08);
+  --outline-strong:#2d1650;
+}
+body[data-theme="high-contrast"]{
+  --clr-primary:#ffd400; --clr-accent:#ff007a;
+  --body-bg:#0b0b0b; --body-text:#ffffff;
+  --surface:#000; --surface-soft:#0f0f0f; --surface-alt:#0b0b0b;
+  --bot-bg:#1a1a1a; --bot-text:#fdfdfd; --user-text:#0b0b0b;
+  --control-bg:rgba(255,255,255,0.18);
+  --outline-strong:#00e0ff;
 }
 *{box-sizing:border-box}
 body{
   margin:0; min-height:100vh; font-family:system-ui,Segoe UI,Arial,sans-serif;
   background:var(--body-bg); color:var(--body-text);
-  padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)
+  padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  transition:background-color .35s ease, color .3s ease;
 }
+.with-transition *{ transition:background-color .35s ease, color .3s ease, border-color .3s ease; }
 #chatbot-container{
   position:fixed; right:16px; bottom:16px;
-  width:min(380px,calc(100vw - 32px)); height:min(640px,calc(100vh - 32px));
+  width:min(400px,calc(100vw - 32px)); height:min(680px,calc(100vh - 32px));
   background:var(--surface); border:2px solid var(--clr-accent); border-radius:18px; overflow:hidden;
   display:flex; flex-direction:column; box-shadow:0 20px 50px rgba(5,1,17,.45); z-index:10
 }
-@supports (height:100dvh){ #chatbot-container{height:min(640px,calc(100dvh - 32px))} }
+@supports (height:100dvh){ #chatbot-container{height:min(680px,calc(100dvh - 32px))} }
 #chatbot-header{ display:flex; align-items:center; gap:.5rem; justify-content:space-between;
   padding:.7rem .9rem; background:linear-gradient(135deg,var(--clr-primary),var(--clr-accent)); color:#fff }
 #chatbot-header h1{ margin:0; font-size:1.05rem }
 .header-actions{ display:flex; gap:.5rem }
-.ctrl-btn{ background:rgba(255,255,255,.18); border:none; border-radius:999px; color:#fff; padding:.3rem .8rem; font-weight:600; cursor:pointer }
+.ctrl-btn{ background:rgba(255,255,255,.18); border:none; border-radius:999px; color:#fff; padding:.3rem .8rem; font-weight:600;
+ cursor:pointer }
 .ctrl-btn:focus-visible{ outline:2px solid #fff; outline-offset:2px }
 
 #status-banner{ background:var(--surface-soft); color:#fff; padding:.4rem .8rem; font-size:.85rem }
@@ -54,15 +67,40 @@ body{
 .bot{ margin-right:auto; background:var(--bot-bg); color:var(--bot-text); padding:.5rem .7rem; border-radius:16px 16px 16px 0 }
 
 #chatbot-form-container{ background:var(--surface-soft); border-top:1px solid rgba(255,255,255,.12); padding:.65rem .9rem calc(.65rem + env(safe-area-inset-bottom)) }
-#chatbot-input-row{ display:flex; gap:.6rem }
+#chatbot-input-row{ display:flex; gap:.6rem; align-items:stretch }
 #chatbot-input{ flex:1; background:var(--control-bg); border:none; border-radius:12px; color:var(--bot-text); font-size:.95rem; padding:.6rem .75rem }
 #chatbot-send{ display:flex; align-items:center; justify-content:center; gap:6px; background:var(--clr-accent); border:none; color:#fff; font-weight:600; padding:.55rem .95rem; border-radius:12px; cursor:pointer; box-shadow:0 6px 16px rgba(255,59,219,.35) }
+.fab{ position:fixed; right:18px; width:54px; height:54px; border-radius:50%; border:none; color:#0b0b0b; font-weight:700; box-shadow:0 12px 28px rgba(5,1,17,.28); cursor:pointer; background:linear-gradient(135deg,var(--clr-primary),var(--clr-accent)); z-index:20; display:flex; align-items:center; justify-content:center; gap:6px; transition:transform .25s ease, box-shadow .25s ease }
+.fab:hover{ transform:translateY(-2px); box-shadow:0 14px 30px rgba(5,1,17,.35) }
+.theme-fab{ bottom:86px; }
+.support-fab{ bottom:22px; background:var(--surface); color:var(--body-text); border:2px solid var(--clr-accent); font-size:1.1rem }
+.fab-label{ font-size:.65rem; font-weight:600 }
+.composer-btn{ background:var(--control-bg); color:var(--bot-text); border:1px solid rgba(255,255,255,.18); border-radius:12px; padding:.55rem .75rem; display:flex; align-items:center; gap:8px; cursor:pointer }
+.composer-btn:focus-visible,.fab:focus-visible,.ctrl-btn:focus-visible,#chatbot-input:focus-visible,#chatbot-send:focus-visible{ outline:3px solid var(--outline-strong); outline-offset:3px }
+.modal-overlay{ position:fixed; inset:0; background:rgba(0,0,0,.55); backdrop-filter:blur(4px); display:flex; align-items:center; justify-content:center; z-index:30; padding:16px }
+.modal{ background:var(--surface); border:2px solid var(--clr-primary); border-radius:16px; max-width:620px; width:100%; box-shadow:0 20px 40px rgba(5,1,17,.4); color:var(--body-text); }
+.modal-header{ display:flex; align-items:center; justify-content:space-between; padding:1rem 1.15rem; border-bottom:1px solid rgba(255,255,255,.1) }
+.modal-body{ padding:1rem 1.15rem; display:grid; gap:1rem }
+.modal-actions{ padding:0 1.15rem 1rem; display:flex; gap:.75rem; justify-content:flex-end }
+.pill-list{ display:flex; flex-wrap:wrap; gap:.5rem }
+.pill{ border:1px solid rgba(255,255,255,.15); background:var(--control-bg); color:var(--bot-text); padding:.45rem .7rem; border-radius:10px; cursor:pointer; transition:background-color .2s ease, border-color .2s ease }
+.pill[aria-pressed="true"]{ background:rgba(0,196,255,.18); border-color:var(--clr-primary) }
+.field{ display:flex; flex-direction:column; gap:.35rem }
+.field label{ font-weight:700 }
+.field input,.field select,.field textarea{ border:1px solid rgba(255,255,255,.15); border-radius:10px; padding:.55rem .7rem; background:var(--control-bg); color:var(--body-text) }
+.modal-close{ background:transparent; border:none; color:inherit; cursor:pointer; font-size:1rem; display:flex; align-items:center; gap:.35rem }
+.modal h3{ margin:0; font-size:1.05rem }
+.support-list{ list-style:none; padding:0; margin:.5rem 0; display:grid; gap:.5rem }
+.support-list button{ width:100%; text-align:left; border:1px solid rgba(255,255,255,.12); padding:.75rem .85rem; border-radius:10px; background:var(--control-bg); color:var(--body-text); cursor:pointer }
+.sticky-footer{ position:fixed; inset-inline:0; bottom:0; display:flex; justify-content:center; pointer-events:none; z-index:15 }
+.sticky-footer .hint{ background:var(--surface); color:var(--body-text); border:1px solid rgba(255,255,255,.08); padding:.35rem .7rem; border-radius:12px; box-shadow:0 6px 18px rgba(5,1,17,.24); pointer-events:auto; display:flex; align-items:center; gap:.45rem; font-size:.85rem }
 .visually-hidden{position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
-
 .turnstile-slot{height:0;overflow:hidden}
+.hidden{ display:none !important }
 @media (max-width:560px){
   #chatbot-container{ inset:0; width:100vw; height:100vh; border-radius:0 }
   @supports(height:100dvh){ #chatbot-container{height:100dvh} }
+  .fab{ right:12px }
 }
 </style>
 </head>
@@ -74,7 +112,7 @@ body{
     <div class="header-actions">
       <button id="voiceCtrl" class="ctrl-btn" type="button" aria-pressed="false" aria-label="Toggle voice input">Voice</button>
       <button id="langCtrl" class="ctrl-btn" type="button" aria-pressed="false" aria-label="Switch language">ES</button>
-      <button id="themeCtrl" class="ctrl-btn" type="button" aria-pressed="false">Dark</button>
+      <button id="themeCtrl" class="ctrl-btn hidden" type="button" aria-pressed="false">Theme</button>
     </div>
   </div>
   <div id="status-banner" class="status-online"><span id="statusText">Secure link active</span></div>
@@ -85,12 +123,81 @@ body{
       <input id="turnstile-token" type="hidden" name="cf-turnstile-response" value="" data-require="false">
       <label class="visually-hidden" for="chatbot-company">Company</label>
       <input id="chatbot-company" type="text" name="company" autocomplete="off" aria-hidden="true" tabindex="-1" style="position:absolute;left:-9999px">
+      <button id="composerCtrl" class="composer-btn" type="button" aria-haspopup="dialog" aria-expanded="false"><i class="fa fa-microphone-lines"></i> Compose</button>
       <input id="chatbot-input" type="text" placeholder="Type your message… [Enter]" maxlength="256">
       <button id="chatbot-send" type="submit" aria-label="Send"><i class="fa fa-arrow-right"></i></button>
     </form>
   </div>
 </div>
 
+<button id="themeFab" class="fab theme-fab" type="button" aria-live="polite" aria-pressed="false">
+  <i class="fa fa-circle-half-stroke"></i>
+  <span class="fab-label" id="themeFabLabel">Light</span>
+</button>
+
+<button id="supportFab" class="fab support-fab" type="button" aria-haspopup="dialog" aria-expanded="false" aria-label="Open support and reset">
+  <i class="fa fa-question"></i>
+</button>
+
+<div class="sticky-footer">
+  <div class="hint"><i class="fa fa-bullhorn"></i><span>Voice-friendly composer keeps context even when you explore.</span></div>
+</div>
+
+<div id="composerOverlay" class="modal-overlay hidden" role="presentation">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="composerTitle">
+    <div class="modal-header">
+      <h3 id="composerTitle">Voice-friendly prompt composer</h3>
+      <button id="composerClose" class="modal-close" type="button" aria-label="Close composer"><i class="fa fa-times"></i> Close</button>
+    </div>
+    <div class="modal-body">
+      <div class="field">
+        <label for="voiceStrategy">Voice type & strategy</label>
+        <select id="voiceStrategy">
+          <option value="concise">Concise coaching</option>
+          <option value="detailed">Detailed explainer</option>
+          <option value="empathetic">Empathetic mentor</option>
+          <option value="executive">Executive brief</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Domain-specific notes</label>
+        <div class="pill-list" id="notePills">
+          <button type="button" class="pill" data-note="PCI-DSS guardrails">PCI-DSS guardrails</button>
+          <button type="button" class="pill" data-note="Cloudflare edge ready">Cloudflare edge ready</button>
+          <button type="button" class="pill" data-note="WCAG 2.1 AA">WCAG 2.1 AA</button>
+          <button type="button" class="pill" data-note="Tiny LLM on-device">Tiny LLM on-device</button>
+          <button type="button" class="pill" data-note="Latency under 150ms">Latency under 150ms</button>
+          <button type="button" class="pill" data-note="Multilingual ES/EN">Multilingual ES/EN</button>
+        </div>
+      </div>
+      <div class="field">
+        <label for="customVariable">Insert variable</label>
+        <input id="customVariable" type="text" placeholder="ex: storefront name, SLA target">
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button id="insertComposer" class="ctrl-btn" type="button">Insert into prompt</button>
+    </div>
+  </div>
+</div>
+
+<div id="supportOverlay" class="modal-overlay hidden" role="presentation">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="supportTitle">
+    <div class="modal-header">
+      <h3 id="supportTitle">Reset or feedback</h3>
+      <button id="supportClose" class="modal-close" type="button" aria-label="Close support options"><i class="fa fa-times"></i> Close</button>
+    </div>
+    <div class="modal-body">
+      <p>Keep the modal open while you decide—no accidental closes on outside clicks.</p>
+      <ul class="support-list">
+        <li><button type="button" id="resetThread"><i class="fa fa-rotate"></i> Reset conversation & memory</button></li>
+        <li><button type="button" id="submitFeedback"><i class="fa fa-comment-dots"></i> Leave quick feedback</button></li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/zustand/umd/zustand.development.js"></script>
 <script src="services/fallback_kb.js"></script>
 <script>
 /* ---------- CONFIG (must match Worker) ---------- */
@@ -151,12 +258,68 @@ const input  = document.querySelector('#chatbot-input');
 const send   = document.querySelector('#chatbot-send');
 const honeyp = document.querySelector('#chatbot-company');
 const tTok   = document.querySelector('#turnstile-token');
+const composerCtrl = document.getElementById('composerCtrl');
+const composerOverlay = document.getElementById('composerOverlay');
+const composerClose = document.getElementById('composerClose');
+const notePills = document.getElementById('notePills');
+const voiceStrategySelect = document.getElementById('voiceStrategy');
+const customVariableInput = document.getElementById('customVariable');
+const insertComposerBtn = document.getElementById('insertComposer');
+const themeFab = document.getElementById('themeFab');
+const themeFabLabel = document.getElementById('themeFabLabel');
+const supportFab = document.getElementById('supportFab');
+const supportOverlay = document.getElementById('supportOverlay');
+const supportClose = document.getElementById('supportClose');
+const resetThreadBtn = document.getElementById('resetThread');
+const submitFeedbackBtn = document.getElementById('submitFeedback');
 
 const state = { conversation:[], isSending:false };
 const integrityState = { timer:null, focusBound:false, summary:null, apiDegradedUntil:0 };
 const storage = (()=>{ try{return window.localStorage;}catch{return null;} })();
 const securityState = { lastSweep:null };
 const speechState = { recognition:null, listening:false, speakEnabled:false, supported:false, langCode:'en-US', allowTts:false };
+
+const { create } = window.zustand || {};
+const defaultThemes = Object.freeze({
+  dark:{ tokens:{
+    'clr-primary':'#00c4ff','clr-accent':'#ff3bdb',
+    'body-bg':'#050111','body-text':'#f4f3ff',
+    'surface':'#251541','surface-soft':'#220f3a','surface-alt':'#1b0e2d',
+    'bot-bg':'#321b53','bot-text':'#ffffff','user-text':'#050118','control-bg':'rgba(255,255,255,0.08)','outline-strong':'#ffd400'
+  }},
+  light:{ tokens:{
+    'clr-primary':'#00c4ff','clr-accent':'#ff3bdb',
+    'body-bg':'#fdfbff','body-text':'#1b1030',
+    'surface':'#faf6ff','surface-soft':'#ece0ff','surface-alt':'#f5edff',
+    'bot-bg':'#efe7ff','bot-text':'#2d1650','user-text':'#fdfbff','control-bg':'rgba(10,4,32,0.08)','outline-strong':'#2d1650'
+  }},
+  'high-contrast':{ tokens:{
+    'clr-primary':'#ffd400','clr-accent':'#ff007a',
+    'body-bg':'#0b0b0b','body-text':'#ffffff',
+    'surface':'#000000','surface-soft':'#0f0f0f','surface-alt':'#0b0b0b',
+    'bot-bg':'#1a1a1a','bot-text':'#fdfdfd','user-text':'#0b0b0b','control-bg':'rgba(255,255,255,0.18)','outline-strong':'#00e0ff'
+  }}
+});
+
+const useUiStore = create ? create((set, get)=>({
+  theme:'light',
+  themeConfig: defaultThemes,
+  composerNotes:[],
+  voiceStrategy:'concise',
+  composerOpen:false,
+  supportOpen:false,
+  setTheme:(theme)=> set({ theme }),
+  setThemeConfig:(cfg)=> set({ themeConfig:{...defaultThemes, ...cfg} }),
+  toggleNote:(note)=>{
+    const curr = get().composerNotes;
+    const exists = curr.includes(note);
+    const next = exists ? curr.filter(n=>n!==note) : curr.concat(note);
+    set({ composerNotes: next });
+  },
+  setVoiceStrategy:(voiceStrategy)=> set({ voiceStrategy }),
+  setComposerOpen:(composerOpen)=> set({ composerOpen }),
+  setSupportOpen:(supportOpen)=> set({ supportOpen })
+})) : { getState:()=>({theme:'light',themeConfig:defaultThemes,composerNotes:[],voiceStrategy:'concise'}) };
 
 const i18n = Object.freeze({
   en:{ title:'Chattia', input:'Type your message… [Enter]', sendLabel:'Send message',
@@ -185,17 +348,59 @@ function cycleLocale(){ setLocale(currentLang()==='en'?'es':'en'); }
 
 /* ---------- Theme ---------- */
 const THEME_KEY = 'chattia-theme';
-function applyTheme(theme){
+const themeOrder = ['light','dark','high-contrast'];
+
+function applyThemeTokens(theme){
+  const { themeConfig } = useUiStore.getState();
+  const tokens = themeConfig?.[theme]?.tokens || themeConfig?.dark?.tokens || Object.values(themeConfig||{})?.[0]?.tokens;
+  if(!tokens) return;
+  const root = document.documentElement;
+  Object.entries(tokens).forEach(([k,v])=> root.style.setProperty(`--${k}`, v));
   document.body.dataset.theme = theme;
-  themeCtrl.textContent = theme === 'dark' ? 'Light' : 'Dark';
+  document.body.classList.add('with-transition');
+  updateThemeFab(theme);
   try{ localStorage.setItem(THEME_KEY, theme); }catch{}
 }
-(function initTheme(){
+
+function updateThemeFab(theme){
+  if(!themeFab || !themeFabLabel) return;
+  const label = theme==='high-contrast' ? 'High contrast' : (theme==='dark'?'Dark':'Light');
+  themeFabLabel.textContent = label;
+  themeFab.setAttribute('aria-pressed', theme==='dark');
+}
+
+function cycleTheme(){
+  const current = useUiStore.getState().theme;
+  const idx = themeOrder.indexOf(current);
+  const next = themeOrder[(idx+1)%themeOrder.length];
+  useUiStore.getState().setTheme?.(next);
+  applyThemeTokens(next);
+}
+
+async function fetchThemeConfig(){
+  try{
+    const res = await fetch(`${API_BASE}/config/themes`, { headers:{...sharedIntegrityHeaders}, cache:'no-store' });
+    if(!res.ok) throw new Error('theme_config_error:'+res.status);
+    const data = await res.json();
+    const themes = data?.themes;
+    if(themes && typeof themes === 'object'){
+      useUiStore.getState().setThemeConfig?.(themes);
+    }
+  }catch(err){
+    console.warn('Using fallback theme config', err);
+  }
+}
+
+function initTheme(){
   const stored = (()=>{ try{return localStorage.getItem(THEME_KEY);}catch{return null;} })();
   const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-  applyTheme(stored || (prefersDark?'dark':'light'));
-})();
-themeCtrl.addEventListener('click', ()=> applyTheme(document.body.dataset.theme==='dark'?'light':'dark'));
+  const initial = stored || (prefersDark ? 'dark' : 'light');
+  useUiStore.getState().setTheme?.(initial);
+  applyThemeTokens(initial);
+}
+
+themeFab?.addEventListener('click', cycleTheme);
+fetchThemeConfig().finally(initTheme);
 
 /* ---------- Status / Integrity ---------- */
 function getSummaryTtl(summary){
@@ -276,6 +481,92 @@ function updateSend(){
   const disabled = state.isSending || !input.value.trim();
   send.disabled = disabled;
 }
+
+/* ---------- Prompt composer ---------- */
+function syncComposerUi(){
+  const { composerNotes, voiceStrategy } = useUiStore.getState();
+  if(voiceStrategySelect) voiceStrategySelect.value = voiceStrategy;
+  if(notePills){
+    notePills.querySelectorAll('.pill').forEach(btn=>{
+      const active = composerNotes.includes(btn.dataset.note);
+      btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+  }
+}
+
+function openComposer(){
+  composerOverlay?.classList.remove('hidden');
+  composerCtrl?.setAttribute('aria-expanded','true');
+  useUiStore.getState().setComposerOpen?.(true);
+  syncComposerUi();
+}
+
+function closeComposer(){
+  composerOverlay?.classList.add('hidden');
+  composerCtrl?.setAttribute('aria-expanded','false');
+  useUiStore.getState().setComposerOpen?.(false);
+}
+
+function insertComposerSnippet(){
+  const { composerNotes, voiceStrategy } = useUiStore.getState();
+  const custom = (customVariableInput?.value || '').trim();
+  const pieces = [
+    voiceStrategy ? `Voice: ${voiceStrategy}` : null,
+    composerNotes.length ? `Notes: ${composerNotes.join('; ')}` : null,
+    custom ? `Variables: ${custom}` : null
+  ].filter(Boolean);
+  if(!pieces.length) return;
+  const snippet = pieces.join(' | ');
+  input.value = input.value ? `${input.value} ${snippet}` : snippet;
+  updateSend();
+  input.focus();
+}
+
+composerCtrl?.addEventListener('click', openComposer);
+composerClose?.addEventListener('click', closeComposer);
+voiceStrategySelect?.addEventListener('change', (e)=>{
+  useUiStore.getState().setVoiceStrategy?.(e.target.value);
+});
+notePills?.addEventListener('click', (e)=>{
+  const btn = e.target.closest('button[data-note]');
+  if(!btn) return;
+  useUiStore.getState().toggleNote?.(btn.dataset.note);
+  syncComposerUi();
+});
+insertComposerBtn?.addEventListener('click', insertComposerSnippet);
+
+/* ---------- Support overlay ---------- */
+function openSupport(){
+  supportOverlay?.classList.remove('hidden');
+  supportFab?.setAttribute('aria-expanded','true');
+  useUiStore.getState().setSupportOpen?.(true);
+}
+
+function closeSupport(){
+  supportOverlay?.classList.add('hidden');
+  supportFab?.setAttribute('aria-expanded','false');
+  useUiStore.getState().setSupportOpen?.(false);
+}
+
+function resetConversation(){
+  state.conversation = [];
+  logEl.innerHTML = '';
+  persistMemory();
+  bootstrapConversation();
+}
+
+function submitFeedback(){
+  const feedback = prompt('Share quick feedback for the OPS team');
+  if(!feedback) return;
+  const note = `Feedback noted: ${feedback}`;
+  addMsg(note,'bot');
+  recordMessage('assistant', note, { source:'feedback' });
+}
+
+supportFab?.addEventListener('click', openSupport);
+supportClose?.addEventListener('click', closeSupport);
+resetThreadBtn?.addEventListener('click', ()=>{ resetConversation(); closeSupport(); });
+submitFeedbackBtn?.addEventListener('click', ()=>{ submitFeedback(); closeSupport(); });
 
 /* ---------- Speech recognition + TTS ---------- */
 function speechSupported(){ return typeof window !== 'undefined' && ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window); }
@@ -375,7 +666,13 @@ async function signedPost(path, json){
 
 /* ---------- Fallback reply ---------- */
 function fallbackReply(userText){
-  try { if (window.FallbackKB?.reply) return window.FallbackKB.reply(userText||'', currentLang()); } catch {}
+  try {
+    if (window.FallbackKB?.reply){
+      const res = window.FallbackKB.reply(userText||'', currentLang());
+      if (typeof res === 'string') return res;
+      if (res && typeof res.text === 'string' && res.text.trim()) return res.text;
+    }
+  } catch {}
   return currentLang()==='es' ? 'Estoy en modo local protegido. ¿En qué puedo ayudarte?' : 'I’m in safeguarded local mode. How can I help?';
 }
 /* ---------- Bootstrap ---------- */
