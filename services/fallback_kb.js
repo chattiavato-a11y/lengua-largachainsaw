@@ -1,170 +1,393 @@
-/* fallback_kb.js — client-side emergency fallback for Chattia (EN/ES)
-   - Greets with many variants
-   - Answers common questions from embedded OPS directory extracts
-   - Exposes window.FallbackKB.reply(text, lang?)
-*/
-(function(){
+// fallback_kb.js — client-side emergency fallback for Chattia (EN/ES)
+// - Friendly greetings and small talk
+// - Simple, service-focused answers using an embedded OPS directory
+// - Exposes window.FallbackKB.reply(text, lang?)
+
+(function () {
   "use strict";
 
   const SERVICE_DIRECTORY = Object.freeze({
     overview: {
       name: "OPS Remote Professional Network",
-      focus: "Remote professionals delivering business operations, contact center, IT support, and specialists on demand.",
-      focusEs: "Profesionales remotos que ofrecen operaciones de negocio, contact center, soporte de TI y especialistas bajo demanda."
+      focus:
+        "OPS connects you with experienced remote professionals in Business Operations, Contact Center, IT Support, and Professionals On Demand so you can extend your team without adding full-time headcount right away.",
+      focusEs:
+        "OPS te conecta con profesionales remotos con experiencia en Operaciones de Negocio, Contact Center, Soporte IT y Profesionales On Demand para ampliar tu equipo sin sumar nómina fija de inmediato."
     },
     servicePillars: [
-      { name: "Business Operations", summary: "Playbooks that preserve the financial hygiene, billing accuracy, procurement visibility, stakeholder updates, and executive dashboards." },
-      { name: "Contact Center (Beta)", summary: "Relationship-first omni-channel agents that combine sentiment cues with refreshed knowledge bases for rapid resolution." },
-      { name: "IT Support (Beta)", summary: "Incident-ready pods with documented triage, integrated telemetry, and continuity alignment across help desk tiers I–II." },
-      { name: "Professionals", summary: "Insight teams providing predictive analytics, feedback frameworks, and growth-focused engagement models." }
+      {
+        name: "Business Operations",
+        summary:
+          "We keep your day-to-day engine running: clear billing, tidy payables/receivables, organized vendors, and dashboards leadership can actually use.",
+        summaryEs:
+          "Cuidamos el motor del día a día: facturación clara, cuentas por pagar/cobrar ordenadas, proveedores organizados y tableros que la dirección realmente puede usar."
+      },
+      {
+        name: "Contact Center (Beta)",
+        summary:
+          "We help you build warm, consistent conversations with customers across channels, balancing speed with long-term relationships.",
+        summaryEs:
+          "Te ayudamos a crear conversaciones cálidas y consistentes con tus clientes en varios canales, equilibrando rapidez con relaciones de largo plazo."
+      },
+      {
+        name: "IT Support (Beta)",
+        summary:
+          "We give you incident-ready teams that guide users, handle tickets, and coordinate fixes so work can keep moving.",
+        summaryEs:
+          "Te damos equipos preparados para incidentes que guían a las personas usuarias, manejan tickets y coordinan soluciones para que el trabajo no se detenga."
+      },
+      {
+        name: "Professionals",
+        summary:
+          "We add extra brains on the problem: teams that read your data, spot patterns, and turn insights into practical next steps.",
+        summaryEs:
+          "Sumamos mentes extra a tus retos: equipos que leen tus datos, detectan patrones y convierten los insights en próximos pasos concretos."
+      }
     ],
     solutions: [
       {
         name: "Business Operations",
-        coverage: "Billing, payables/receivables, vendor coordination, administrative support, marketing, and digital marketing assistance.",
-        coverageEs: "Facturación, cuentas por pagar/cobrar, coordinación con proveedores, soporte administrativo, marketing y acompañamiento en marketing digital."
+        coverage:
+          "Billing, payables and receivables, vendor coordination, admin support, and marketing support so the internal engine stays organized.",
+        coverageEs:
+          "Facturación, cuentas por pagar y cobrar, coordinación con proveedores, soporte administrativo y apoyo en marketing para que el motor interno se mantenga ordenado."
       },
       {
         name: "Contact Center (Beta)",
-        coverage: "Multi-channel, relationship-driven CX with rapid-resolution support and loyalty-oriented engagement.",
-        coverageEs: "CX multicanal centrado en la relación con soporte de resolución rápida y engagement orientado a la lealtad."
+        coverage:
+          "Relationship-driven service across channels with quick, consistent answers and a human tone of voice.",
+        coverageEs:
+          "Servicio multicanal centrado en la relación, con respuestas rápidas, consistentes y un tono humano."
       },
       {
         name: "IT Support (Beta)",
-        coverage: "End-to-end IT support with practical help desk coverage, ticketing, incident handling, and specialized support tracks.",
-        coverageEs: "Soporte TI de punta a punta con cobertura de mesa de ayuda, ticketing, manejo de incidentes y rutas de soporte especializado."
+        coverage:
+          "Practical IT help desk coverage (Tiers I–II), incident handling, and specialist tracks for more complex issues.",
+        coverageEs:
+          "Mesa de ayuda práctica (niveles I–II), manejo de incidentes y rutas especializadas para casos más complejos."
       },
       {
         name: "Professionals On Demand",
-        coverage: "Deployable assistants, specialists, and consultants for short-term sprints or long-term engagements.",
-        coverageEs: "Asistentes, especialistas y consultores desplegables para sprints cortos o compromisos de largo plazo."
+        coverage:
+          "Assistants, specialists, and consultants you can plug in quickly for sprints or longer-term engagements.",
+        coverageEs:
+          "Asistentes, especialistas y consultores que puedes incorporar rápido para sprints o compromisos de más largo plazo."
       }
     ],
     proofPoints: [
-      "24/7 follow-the-sun pods",
-      "40% faster resolution",
-      "99.95% availability",
-      "12× security posture improvements (OPS CyberSec Core aligned)"
+      "24/7 follow-the-sun coverage",
+      "Noticeably faster resolution times",
+      "High availability for remote operations",
+      "Security posture strengthened through the OPS CyberSec Core framework"
     ],
     proofPointsEs: [
-      "Pods 24/7 follow-the-sun",
-      "Resolución 40% más rápida",
-      "99.95% de disponibilidad",
-      "Mejoras de 12× en la postura de seguridad (alineadas a OPS CyberSec Core)"
+      "Cobertura 24/7 con equipos distribuidos",
+      "Tiempos de resolución visiblemente más rápidos",
+      "Alta disponibilidad para operaciones remotas",
+      "Postura de seguridad reforzada a través del marco OPS CyberSec Core"
     ],
     contactPathways: [
-      "Discovery calls to map operational needs",
-      "Direct OPS consultations for integrations and CX roadmaps",
+      "Book a discovery call to map your operational needs",
+      "Talk directly with OPS about integrations and CX roadmaps",
       "Hire remote specialists across operations, CX, IT support, and on-demand talent"
     ],
     contactPathwaysEs: [
-      "Discovery calls para mapear necesidades operativas",
-      "Consultorías directas con OPS para integraciones y roadmaps de CX",
-      "Contrata especialistas remotos en operaciones, CX, soporte TI y talento on-demand"
+      "Agendar una discovery call para mapear tus necesidades operativas",
+      "Hablar directamente con OPS sobre integraciones y roadmaps de CX",
+      "Contratar especialistas remotos en operaciones, CX, soporte IT y talento on-demand"
     ]
   });
 
   const GREET_EN = [
-    "Hi! I’m Chattia. How can I help today?",
-    "Hello! I’m Chattia—ask me about services, pricing, or how to get started.",
-    "Hey there! Need Business Ops, Contact Center, IT Support, or a specialist?",
-    "Welcome! I can explain our pillars, solutions, or set up a discovery call.",
-    "Good day! Tell me your goal and I’ll map options.",
-    "Hi! Quick tour: Business Ops, Contact Center (beta), IT Support (beta), Professionals On-Demand.",
-    "Hello! Ask me about availability, timelines, or security compliance.",
-    "Hi! Want a concise overview or deep dive? I can do both."
+    "Hi! I’m Chattia, your OPS guide. What would you like help with today?",
+    "Hello and welcome 👋 Are you looking for services, pricing, or just exploring options?",
+    "Hey there! Do you need support for Business Operations, a Contact Center, IT, or a specific specialist?",
+    "Welcome to OPS Remote Professional Network. Tell me a bit about your situation and I’ll suggest the best fit.",
+    "Good to see you here! I can give a quick overview or go into detail—what are you curious about?",
+    "Hi! Quick tour if you’d like: Business Operations, Contact Center (beta), IT Support (beta), and Professionals On Demand.",
+    "Hello! Ask me about availability, timelines, or how we’d work with a team like yours.",
+    "Hi! Prefer a short summary or a deeper conversation? I’m happy to do either."
   ];
+
   const GREET_ES = [
-    "¡Hola! Soy Chattia. ¿En qué puedo ayudarte hoy?",
-    "¡Bienvenido/a! Puedo explicarte servicios, precios o cómo empezar.",
-    "¡Hey! ¿Necesitas Operaciones, Contact Center, Soporte IT o un especialista?",
-    "¡Hola! Te guío por pilares, soluciones o agendamos una llamada.",
-    "¡Buen día! Cuéntame tu objetivo y te propongo opciones.",
-    "¡Hola! Tour rápido: Operaciones, Contact Center (beta), Soporte IT (beta), Profesionales On-Demand.",
-    "¡Hola! Pregunta por disponibilidad, tiempos o cumplimiento de seguridad.",
-    "¡Hola! ¿Prefieres un resumen o más detalle? Yo me adapto."
+    "¡Hola! Soy Chattia, tu guía en OPS. ¿En qué te gustaría que te ayude hoy?",
+    "¡Bienvenido/a 👋! ¿Buscas servicios, precios o solo quieres conocer tus opciones?",
+    "¡Hey! ¿Necesitas apoyo en Operaciones de Negocio, Contact Center, Soporte IT o un/a especialista puntual?",
+    "Bienvenido/a a OPS Remote Professional Network. Cuéntame tu situación y te propongo la mejor combinación.",
+    "¡Qué bueno tenerte aquí! Puedo darte un resumen rápido o entrar en detalle, ¿qué prefieres?",
+    "¡Hola! Tour rápido: Operaciones de Negocio, Contact Center (beta), Soporte IT (beta) y Profesionales On-Demand.",
+    "¡Hola! Pregúntame por disponibilidad, plazos o cómo trabajaríamos con tu equipo.",
+    "¡Hola! ¿Quieres un resumen breve o una explicación más completa? Me adapto a lo que necesites."
   ];
+
+  const ANSWERS = {
+    services_en:
+      "We offer four main service lines, all with remote professionals:\n• Business Operations – Keep billing, payables/receivables, vendors, and admin work under control.\n• Contact Center (Beta) – Agents who build relationships across chat, voice, and other channels.\n• IT Support (Beta) – Practical help desk coverage and incident handling for day-to-day tech issues.\n• Professionals On Demand – Specialists and consultants you can plug in for projects or ongoing support.\nIf you tell me what kind of operation you run, I can suggest a starting point.",
+    services_es:
+      "Tenemos cuatro líneas principales de servicio con talento remoto:\n• Business Operations – Orden en facturación, cobros/pagos, proveedores y soporte administrativo.\n• Contact Center (Beta) – Agentes que cuidan la relación con tus clientes en varios canales.\n• IT Support (Beta) – Mesa de ayuda práctica y manejo de incidentes para tu día a día tecnológico.\n• Professionals On Demand – Especialistas y consultores que se suman a proyectos o a tu operación.\nCuéntame qué tipo de operación tienes y te sugiero por dónde empezar.",
+    contact_center_en:
+      "Great—let’s focus on your contact center.\nWe can support you with remote agents, team leads, quality support and ops specialists who help you:\n• Cover more hours across chat, voice and messaging\n• Keep knowledge bases fresh so answers stay consistent\n• Track satisfaction and resolution time\n• Add extra hands during campaigns or busy seasons\nTell me your current setup (channels, hours, team size) and I’ll outline a few options.",
+    contact_center_es:
+      "Perfecto, hablemos de tu contact center.\nPodemos apoyarte con agentes remotos, leads de equipo y especialistas en operaciones para:\n• Cubrir más horas en chat, voz y mensajería\n• Mantener actualizada tu base de conocimiento\n• Seguir indicadores de satisfacción y tiempo de resolución\n• Sumar manos extra en campañas o temporadas altas\nCuéntame cómo trabajas hoy (canales, horarios, tamaño de equipo) y te propongo opciones.",
+    pro_on_demand_en:
+      "Got it—you’re looking for a specific person, not just a service.\nWe can match you with Professionals On Demand: assistants, specialists or consultants for short sprints or long-term work.\nTell me what you’re trying to achieve, the skills you’re looking for, and whether you prefer part-time, full-time, or project-based help.",
+    pro_on_demand_es:
+      "Entendido, buscas a una persona concreta, no solo un servicio.\nPodemos conectarte con Professionals On Demand: asistentes, especialistas o consultores para proyectos cortos o trabajo de largo plazo.\nCuéntame qué objetivo tienes, qué habilidades buscas y si prefieres apoyo por horas, tiempo completo o por proyecto.",
+    it_support_en:
+      "Yes—IT Support (Beta) is one of our pillars. We provide practical help desk coverage (Tier I–II), ticket handling, incident response, and specialist tracks for trickier issues. Share your tools, time zones, and ticket volume, and I’ll map a coverage plan.",
+    it_support_es:
+      "Sí, Soporte IT (beta) es uno de nuestros pilares. Damos cobertura práctica de mesa de ayuda (niveles I–II), manejo de tickets, respuesta a incidentes y rutas especializadas para casos complejos. Cuéntame tus herramientas, zonas horarias y volumen de tickets y te propongo un plan de cobertura.",
+    business_ops_en:
+      "We can take on Business Operations so your back office stays organized: billing, payables/receivables, vendor coordination, admin support, and marketing assistance. If you share your current gaps, I can recommend a starter pod or individual specialist.",
+    business_ops_es:
+      "Podemos encargarnos de Operaciones de Negocio para mantener tu back-office en orden: facturación, cuentas por pagar/cobrar, coordinación con proveedores, soporte administrativo y ayuda en marketing. Si me cuentas tus brechas actuales, te recomiendo un pod inicial o un/a especialista.",
+    availability_en:
+      "Happy to talk availability, timelines, or pricing. Share your context and target start; we usually reply within one business day. Most teams can spin up in days with flexible schedules/time zones. Pricing is tailored after a quick discovery call—want to compare a few options?",
+    availability_es:
+      "Con gusto hablamos de disponibilidad, tiempos o precios. Cuéntame tu contexto y fecha objetivo; normalmente respondemos dentro de un día hábil. La mayoría de los equipos pueden activarse en pocos días con horarios y zonas horarias flexibles. Los precios se ajustan tras una breve discovery call. ¿Quieres revisar opciones?"
+  };
+
+  function pick(arr) {
+    return arr[(Math.random() * arr.length) | 0];
+  }
+
+  function getFocus(lang) {
+    const o = SERVICE_DIRECTORY.overview;
+    return lang === "es" ? o.focusEs || o.focus : o.focus;
+  }
+
+  function getPillars(lang) {
+    const isEs = lang === "es";
+    return SERVICE_DIRECTORY.servicePillars.map((p) =>
+      `${p.name} — ${isEs ? p.summaryEs || p.summary : p.summary}`
+    );
+  }
+
+  function listPillars(lang, bullet = "• ") {
+    return getPillars(lang)
+      .map((entry) => `${bullet}${entry}`)
+      .join("\n");
+  }
+
+  function getProofPoints(lang) {
+    const d = SERVICE_DIRECTORY;
+    return lang === "es" ? d.proofPointsEs || d.proofPoints : d.proofPoints;
+  }
+
+  function getSolutions(lang) {
+    const isEs = lang === "es";
+    return SERVICE_DIRECTORY.solutions.map((s) =>
+      `${s.name} — ${isEs ? s.coverageEs || s.coverage : s.coverage}`
+    );
+  }
+
+  function getContactPathways(lang) {
+    const d = SERVICE_DIRECTORY;
+    return lang === "es"
+      ? d.contactPathwaysEs || d.contactPathways
+      : d.contactPathways;
+  }
+
+  function buildOverview(lang, withProof = false) {
+    const nameLine = `${SERVICE_DIRECTORY.overview.name} — ${getFocus(lang)}`;
+    const pillarList = listPillars(lang);
+    const proofList = getProofPoints(lang)
+      .map((item) => `• ${item}`)
+      .join("\n");
+
+    if (lang === "es") {
+      const base = `${nameLine}\n\nPilares de servicio:\n${pillarList}`;
+      if (!withProof) {
+        return `${base}\n\n¿Quieres ver opciones o agendar una discovery call? Normalmente respondemos en un día hábil.`;
+      }
+      return (
+        `${base}\n\nResultados que buscamos:\n${proofList}\n\n¿Quieres ver opciones o agendar una discovery call? Normalmente respondemos en un día hábil.`
+      );
+    }
+
+    const base = `${nameLine}\n\nService pillars:\n${pillarList}`;
+    if (!withProof) {
+      return `${base}\n\nWant options or a discovery call? We usually reply within one business day.`;
+    }
+    return (
+      `${base}\n\nSome of the results we focus on:\n${proofList}\n\nWant options or a discovery call? We usually reply within one business day.`
+    );
+  }
+
+  function detectLang(text, hint) {
+    if (hint) return hint.toLowerCase().startsWith("es") ? "es" : "en";
+    return /[áéíóúñü¿¡]/i.test(text) ? "es" : "en";
+  }
+
+  function isGreeting(text) {
+    return /\b(hi|hello|hey|howdy|yo|hiya|good\s*(morning|afternoon|evening)|hola|buenas|buen\s*d[ií]a|qué\s*tal)\b/i.test(
+      text
+    );
+  }
 
   const KB = [
     {
-      id:"overview.en", lang:"en",
-      q: /(what\s+is|who\s+are|about|overview|summary|intro|explain)\b|^ops\b|^chattia\b/i,
-      a: () => `${SERVICE_DIRECTORY.overview.name} — ${SERVICE_DIRECTORY.overview.focus}
-Pillars:
-• ${getPillars("en").join("\n• ")}
-Proof points: ${getProofPoints("en").join("; ")}.`
+      id: "contact-center.en",
+      lang: "en",
+      q: /(contact\s*center|call\s*center|support\s*center|phone\s+and\s+chat|multi[-\s]?channel|cx\s*(team)?)/i,
+      a: () => ANSWERS.contact_center_en
     },
     {
-      id:"overview.es", lang:"es",
-      q: /(qué\s+es|quiénes\s+son|acerca|resumen|introducción|explica|explicación)\b|^ops\b|^chattia\b/i,
-      a: () => `${SERVICE_DIRECTORY.overview.name} — ${SERVICE_DIRECTORY.overview.focus}
-Pilares:
-• ${SERVICE_DIRECTORY.servicePillars[0].name} — ${SERVICE_DIRECTORY.servicePillars[0].summary}
-• ${SERVICE_DIRECTORY.servicePillars[1].name} — ${SERVICE_DIRECTORY.servicePillars[1].summary}
-• ${SERVICE_DIRECTORY.servicePillars[2].name} — ${SERVICE_DIRECTORY.servicePillars[2].summary}
-• ${SERVICE_DIRECTORY.servicePillars[3].name} — ${SERVICE_DIRECTORY.servicePillars[3].summary}
-Resultados: ${SERVICE_DIRECTORY.proofPoints.join("; ")}.`
+      id: "contact-center.es",
+      lang: "es",
+      q: /(contact\s*center|call\s*center|centro\s+de\s+(atenci[oó]n|contacto)|callcenter|equipo\s+de\s+soporte|voz\s+y\s+chat)/i,
+      a: () => ANSWERS.contact_center_es
     },
-    { id:"pillars.en", lang:"en", q:/\b(pillars?|areas|capabilities|services|what\s+do\s+you\s+offer)\b/i,
-      a:()=> `Service Pillars
-- ${SERVICE_DIRECTORY.servicePillars[0].name}: ${SERVICE_DIRECTORY.servicePillars[0].summary}
-- ${SERVICE_DIRECTORY.servicePillars[1].name}: ${SERVICE_DIRECTORY.servicePillars[1].summary}
-- ${SERVICE_DIRECTORY.servicePillars[2].name}: ${SERVICE_DIRECTORY.servicePillars[2].summary}
-- ${SERVICE_DIRECTORY.servicePillars[3].name}: ${SERVICE_DIRECTORY.servicePillars[3].summary}`
+    {
+      id: "pro-on-demand.en",
+      lang: "en",
+      q: /(professional|specialist|consultant|assistant|individual\s+contributor|on[-\s]?demand|one\s+person|single\s+role)/i,
+      a: () => ANSWERS.pro_on_demand_en
     },
-    { id:"pillars.es", lang:"es", q:/\b(pilares?|áreas|capacidades|servicios|qué\s+ofrecen|ofrecen)\b/i,
-      a:()=> `Pilares de Servicio
-- ${SERVICE_DIRECTORY.servicePillars[0].name}: ${SERVICE_DIRECTORY.servicePillars[0].summary}
-- ${SERVICE_DIRECTORY.servicePillars[1].name}: ${SERVICE_DIRECTORY.servicePillars[1].summary}
-- ${SERVICE_DIRECTORY.servicePillars[2].name}: ${SERVICE_DIRECTORY.servicePillars[2].summary}
-- ${SERVICE_DIRECTORY.servicePillars[3].name}: ${SERVICE_DIRECTORY.servicePillars[3].summary}`
+    {
+      id: "pro-on-demand.es",
+      lang: "es",
+      q: /(profesional|especialista|consultor|asistente|persona\s+(buena|puntual)|una\s+persona|talento\s+on[-\s]?demand)/i,
+      a: () => ANSWERS.pro_on_demand_es
     },
-    { id:"solutions.en", lang:"en", q:/\b(solutions?|catalog|packages|what\s+problems|use\s+cases|examples)\b/i,
-      a:()=> `Solutions
-• ${SERVICE_DIRECTORY.solutions[0].name} — ${SERVICE_DIRECTORY.solutions[0].coverage}
-• ${SERVICE_DIRECTORY.solutions[1].name} — ${SERVICE_DIRECTORY.solutions[1].coverage}
-• ${SERVICE_DIRECTORY.solutions[2].name} — ${SERVICE_DIRECTORY.solutions[2].coverage}
-• ${SERVICE_DIRECTORY.solutions[3].name} — ${SERVICE_DIRECTORY.solutions[3].coverage}`
+    {
+      id: "it-support.en",
+      lang: "en",
+      q: /(it\s+support|help\s*desk|tickets?|incidents?|tier\s*(i|1|ii|2)|tech\s+support)/i,
+      a: () => ANSWERS.it_support_en
     },
-    { id:"solutions.es", lang:"es", q:/\b(soluciones?|catálogo|paquetes|casos\s+de\s+uso|ejemplos)\b/i,
-      a:()=> `Soluciones
-• ${SERVICE_DIRECTORY.solutions[0].name} — ${SERVICE_DIRECTORY.solutions[0].coverage}
-• ${SERVICE_DIRECTORY.solutions[1].name} — ${SERVICE_DIRECTORY.solutions[1].coverage}
-• ${SERVICE_DIRECTORY.solutions[2].name} — ${SERVICE_DIRECTORY.solutions[2].coverage}
-• ${SERVICE_DIRECTORY.solutions[3].name} — ${SERVICE_DIRECTORY.solutions[3].coverage}`
+    {
+      id: "it-support.es",
+      lang: "es",
+      q: /(soporte\s+it|soporte\s+ti|mesa\s+de\s+ayuda|tickets?|incidentes?|nivel\s*(i|1|ii|2)|soporte\s+t[eé]cnico)/i,
+      a: () => ANSWERS.it_support_es
     },
-    { id:"proof.en", lang:"en", q:/\b(results?|metrics|proof|sla|availability|uptime|speed|security|compliance|nist|cisa|pci|soc2|gdpr|ccpa)\b/i,
-      a:()=> `Operational Proof Points
-- ${SERVICE_DIRECTORY.proofPoints.join("\n- ")}`
+    {
+      id: "business-ops.en",
+      lang: "en",
+      q: /(business\s+operations|back[-\s]?office|billing|payables|receivables|vendors?|procurement|invoicing|admin\s+tasks?)/i,
+      a: () => ANSWERS.business_ops_en
     },
-    { id:"proof.es", lang:"es", q:/\b(resultados?|métricas|pruebas|sla|disponibilidad|seguridad|cumplimiento|nist|cisa|pci|soc2|gdpr|ccpa)\b/i,
-      a:()=> `Pruebas Operativas
-- ${SERVICE_DIRECTORY.proofPoints.join("\n- ")}`
+    {
+      id: "business-ops.es",
+      lang: "es",
+      q: /(operaciones\s+de\s+negocio|back[-\s]?office|facturaci[oó]n|facturas|proveedores|compras|cuentas\s+por\s+(pagar|cobrar)|tareas\s+administrativas)/i,
+      a: () => ANSWERS.business_ops_es
     },
-    { id:"contact.en", lang:"en", q:/\b(contact|reach|call|book|consult|hire|talk|email|phone|discovery)\b/i,
-      a:()=> `Contact & Hiring Paths
-- ${SERVICE_DIRECTORY.contactPathways.join("\n- ")}
-Share your context and preferred times; we reply within one business day.` },
-    { id:"contact.es", lang:"es", q:/\b(contacto|llamar|agendar|consulta|contratar|hablar|correo|teléfono|descubrimiento)\b/i,
-      a:()=> `Rutas de Contacto y Contratación
-- ${SERVICE_DIRECTORY.contactPathways.join("\n- ")}
-Cuéntanos tu contexto y horarios; respondemos dentro de un día hábil.` }
+    {
+      id: "availability.en",
+      lang: "en",
+      q: /(availability|how\s+soon|start|onboard|pricing|cost|budget|timeline|timeframe|how\s+quickly|response\s+time)/i,
+      a: () => ANSWERS.availability_en
+    },
+    {
+      id: "availability.es",
+      lang: "es",
+      q: /(disponibilidad|cu[aá]nto\s+tiempo|empezar|integrarse|precios?|presupuesto|plazos?|qu[eé]\s+tan\s+rápido|responden)/i,
+      a: () => ANSWERS.availability_es
+    },
+    {
+      id: "services.en",
+      lang: "en",
+      q: /(services?|service\s+areas?|what\s+do\s+you\s+offer|offerings?|pillars|capabilities)/i,
+      a: () => ANSWERS.services_en
+    },
+    {
+      id: "services.es",
+      lang: "es",
+      q: /(servicios|pilares|qué\s+ofrecen|que\s+ofrecen|ofrecen|áreas\s+principales)/i,
+      a: () => ANSWERS.services_es
+    },
+    {
+      id: "overview.en",
+      lang: "en",
+      q: /(what\s+is|who\s+are|about|overview|summary|intro|explain)\b|^ops\b|^chattia\b/i,
+      a: () => buildOverview("en", true)
+    },
+    {
+      id: "overview.es",
+      lang: "es",
+      q: /(qué\s+es|quiénes\s+son|acerca|resumen|introducci[oó]n|explica|explicaci[oó]n)\b|^ops\b|^chattia\b/i,
+      a: () => buildOverview("es", true)
+    },
+    {
+      id: "solutions.en",
+      lang: "en",
+      q: /\b(solutions?|catalog|packages|what\s+problems|use\s+cases|examples)\b/i,
+      a: () => {
+        const list = getSolutions("en").map((s) => "• " + s).join("\n");
+        return `Solutions\n${list}`;
+      }
+    },
+    {
+      id: "solutions.es",
+      lang: "es",
+      q: /\b(soluciones?|cat[aá]logo|paquetes|casos\s+de\s+uso|ejemplos)\b/i,
+      a: () => {
+        const list = getSolutions("es").map((s) => "• " + s).join("\n");
+        return `Soluciones\n${list}`;
+      }
+    },
+    {
+      id: "proof.en",
+      lang: "en",
+      q: /\b(results?|metrics|proof|sla|availability|uptime|speed|security|compliance)\b/i,
+      a: () => {
+        const list = getProofPoints("en").map((p) => "- " + p).join("\n");
+        return `Operational Highlights\n${list}`;
+      }
+    },
+    {
+      id: "proof.es",
+      lang: "es",
+      q: /\b(resultados?|m[eé]tricas|pruebas|sla|disponibilidad|seguridad|cumplimiento)\b/i,
+      a: () => {
+        const list = getProofPoints("es").map((p) => "- " + p).join("\n");
+        return `Pruebas Operativas\n${list}`;
+      }
+    },
+    {
+      id: "contact.en",
+      lang: "en",
+      q: /\b(contact|reach|call|book|consult|hire|talk|email|phone|discovery)\b/i,
+      a: () => {
+        const lines = getContactPathways("en").map((l) => "- " + l).join("\n");
+        return (
+          `Contact & Hiring Paths\n${lines}\n` +
+          `Share your context and preferred times; we usually reply within one business day.`
+        );
+      }
+    },
+    {
+      id: "contact.es",
+      lang: "es",
+      q: /\b(contacto|llamar|agendar|consulta|contratar|hablar|correo|tel[eé]fono|descubrimiento)\b/i,
+      a: () => {
+        const lines = getContactPathways("es").map((l) => "- " + l).join("\n");
+        return (
+          `Rutas de Contacto y Contratación\n${lines}\n` +
+          `Cuéntanos tu contexto y horarios; normalmente respondemos dentro de un día hábil.`
+        );
+      }
+    }
   ];
 
-  function pick(a){return a[(Math.random()*a.length)|0];}
-  function detectLang(s, hint){ if(hint) return hint.toLowerCase().startsWith('es')?'es':'en'; return /[áéíóúñü¿¡]/i.test(s)?'es':'en'; }
-  function isGreeting(s){ return /\b(hi|hello|hey|howdy|yo|hiya|good\s*(morning|afternoon|evening)|hola|buenas|qué\s*tal)\b/i.test(s); }
-
-  function reply(userText, langHint){
-    const text = (userText||"").trim();
+  function reply(userText, langHint) {
+    const text = (userText || "").trim();
     const lang = detectLang(text, langHint);
-    if (!text || isGreeting(text)) return pick(lang==='es'?GREET_ES:GREET_EN);
-    const bank = KB.filter(k=>k.lang===lang);
-    for (const item of bank){ if (item.q.test(text)) return item.a(); }
-    return (lang==='es')
-      ? `${SERVICE_DIRECTORY.overview.name} — ${getFocus('es')}`
-      : `${SERVICE_DIRECTORY.overview.name} — ${getFocus('en')}`;
+
+    if (!text || isGreeting(text)) {
+      return lang === "es" ? pick(GREET_ES) : pick(GREET_EN);
+    }
+
+    const bank = KB.filter((k) => k.lang === lang);
+
+    for (const item of bank) {
+      if (item.q.test(text)) return item.a();
+    }
+
+    return buildOverview(lang, false);
   }
 
-  window.FallbackKB = { reply };
+  window.FallbackKB = Object.freeze({ reply });
 })();
