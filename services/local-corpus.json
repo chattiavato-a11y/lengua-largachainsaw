@@ -1,110 +1,110 @@
 [
-    {
-        "id": "greeting",
-        "title": "Greetings and introductions",
-        "prompt": "hello hi hey greetings hola buenas buen dia good morning good afternoon welcome",
-        "answers": {
-            "en": "Hi there! I'm in safeguarded local mode right now, but I can still capture your intent and keep the conversation flowing. How can I help you today?",
-            "es": "\u00a1Hola! Estoy en modo local protegido por ahora, pero puedo seguir la conversaci\u00f3n y registrar lo que necesites. \u00bfEn qu\u00e9 puedo ayudarte?"
-        }
-    },
-    {
-        "id": "status",
-        "title": "Service availability",
-        "prompt": "service status availability outage offline mantenimiento mantenimiento estado",
-        "answers": {
-            "en": "Our primary Workers cluster isn't reachable at the moment, so I'm answering from the local corpus. Your messages stay queued with integrity metadata and will sync when the secure link comes back.",
-            "es": "La plataforma principal en Workers no est\u00e1 disponible por el momento, as\u00ed que respondo desde el corpus local. Tus mensajes quedan en cola con metadatos de integridad y se sincronizar\u00e1n cuando vuelva el enlace seguro."
-        }
-    },
-    {
-        "id": "integrity",
-        "title": "Integrity gateway telemetry",
-        "prompt": "integrity gateway summary ttl signature protocolos health resumen",
-        "answers": {
-            "en": "The integrity gateway keeps signing windows published so the client knows the current signature TTL and allowed origins. If the health summary can't be reached, Chattia lights the banner to show we're in a safeguarded local state until the edge mesh returns.",
-            "es": "La pasarela de integridad mantiene visible la ventana de firmas para que el cliente conozca el TTL vigente y los or\u00edgenes permitidos. Si no se puede consultar el resumen de salud, Chattia activa la alerta indicando que usamos el modo local protegido hasta que regrese la malla perimetral."
-        }
-    },
-    {
-        "id": "security",
-        "title": "Security and compliance",
-        "prompt": "security seguridad compliance cumplimiento pci nist cisa ops cybersec core governance gobernanza",
-        "answers": {
-            "en": "Security is anchored to the OPS CyberSec Core controls that map to NIST CSF, CISA Cyber Essentials, and PCI DSS 4.0. Even in fallback mode every payload is staged with AES-256 encryption until it can be forwarded upstream.",
-            "es": "La seguridad se basa en los controles OPS CyberSec Core alineados con NIST CSF, CISA Cyber Essentials y PCI DSS 4.0. Incluso en modo local cada mensaje se resguarda con cifrado AES-256 hasta poder enviarlo al servicio principal."
-        }
-    },
-    {
-        "id": "ux",
-        "title": "UX and accessibility",
-        "prompt": "ux ui accessibility accesibilidad wcag progressive web app core web vitals experiencia",
-        "answers": {
-            "en": "Chattia follows adaptive UX, WCAG 2.1 AA, and Core Web Vitals monitoring. While offline I can still suggest next steps, log usability feedback, and prep insights for designers once the main pipeline returns.",
-            "es": "Chattia aplica UX adaptativo, WCAG 2.1 AA y seguimiento de Core Web Vitals. Aunque est\u00e9 offline puedo sugerir pr\u00f3ximos pasos, registrar comentarios de usabilidad y preparar insights para el equipo de dise\u00f1o cuando vuelva la conectividad."
-        }
-    },
-    {
-        "id": "payments",
-        "title": "Payments and data protection",
-        "prompt": "payments pagos pci tokens card datos sensibles encryption cifrado",
-        "answers": {
-            "en": "Payment artifacts remain tokenized and never touch the browser in fallback mode. The pipeline keeps PCI DSS requirements 3-11 active with rotating keys, tamper-evident logs, and segregation of cardholder data.",
-            "es": "Los artefactos de pago se tokenizan y nunca pasan por el navegador en modo local. El flujo mantiene activos los requisitos PCI DSS 3-11 con llaves rotativas, bit\u00e1coras con evidencia de manipulaci\u00f3n y segregaci\u00f3n de datos de tarjeta."
-        }
-    },
-    {
-        "id": "privacy",
-        "title": "Privacy and governance",
-        "prompt": "privacy privacidad gdpr ccpa datos personales data retention retencion",
-        "answers": {
-            "en": "Your inputs stay governed by GDPR/CCPA policies. Locally cached snippets auto-expire after the secure transfer succeeds so we don't retain personal data longer than necessary.",
-            "es": "Tus datos siguen las pol\u00edticas GDPR/CCPA. Los fragmentos almacenados localmente se eliminan autom\u00e1ticamente cuando la transferencia segura se completa para no conservar informaci\u00f3n personal m\u00e1s de lo necesario."
-        }
-    },
-    {
-        "id": "observability",
-        "title": "Telemetry and observability",
-        "prompt": "observability telemetry metrics lighthouse core web vitals logging monitoreo",
-        "answers": {
-            "en": "We monitor Lighthouse CI, Core Web Vitals, and anomaly baselines even when offline. I can note any lag or UX regression you see so Site Reliability can replay it once the SIEM connection stabilizes.",
-            "es": "Supervisamos Lighthouse CI, Core Web Vitals y l\u00edneas base de anomal\u00edas incluso estando offline. Puedo registrar cualquier demora o regresi\u00f3n UX que notes para que el equipo de fiabilidad la revise cuando se estabilice la conexi\u00f3n al SIEM."
-        }
-    },
-    {
-        "id": "roadmap",
-        "title": "Roadmap and experimentation",
-        "prompt": "roadmap plan futuro features experimentos tiny llm tiny ml",
-        "answers": {
-            "en": "Upcoming drops include Tiny LLM inference for cost-efficient personalization, plus PWA hardening with background sync. Share any experiments you'd like prioritized and I'll flag them for the product council.",
-            "es": "Los pr\u00f3ximos lanzamientos incluyen inferencia con Tiny LLM para personalizaci\u00f3n eficiente y mejoras PWA con sincronizaci\u00f3n en segundo plano. Comparte los experimentos que quieras priorizar y los marcar\u00e9 para el consejo de producto."
-        }
-    },
-    {
-        "id": "escalate",
-        "title": "Escalation request",
-        "prompt": "escalate escalation soporte support human agente contactar help ayuda",
-        "answers": {
-            "en": "I've logged your escalation request. Drop any context you want forwarded and I'll package it for the human team the moment the primary channel is live again.",
-            "es": "He registrado tu solicitud de escalaci\u00f3n. Comparte el contexto que desees y lo enviar\u00e9 al equipo humano en cuanto el canal principal vuelva a estar disponible."
-        }
-    },
-    {
-        "id": "goodbye",
-        "title": "Closing the session",
-        "prompt": "goodbye thanks thank you bye adios gracias",
-        "answers": {
-            "en": "Thank you for checking in! I'll keep monitoring the secure edge link and sync our transcript automatically once connectivity is restored.",
-            "es": "\u00a1Gracias por visitar Chattia! Seguir\u00e9 monitoreando el enlace seguro y sincronizar\u00e9 nuestra transcripci\u00f3n en cuanto regrese la conectividad."
-        }
-    },
-    {
-        "id": "default",
-        "title": "General fallback",
-        "prompt": "general fallback default cualquier cosa",
-        "answers": {
-            "en": "I'm temporarily offline from the core Chattia brain, but your message is captured with compliance metadata and will be replayed as soon as the connection returns.",
-            "es": "Estoy temporalmente desconectada del n\u00facleo de Chattia, pero tu mensaje queda registrado con metadatos de cumplimiento y se reenviar\u00e1 en cuanto vuelva la conexi\u00f3n."
-        }
+  {
+    "id": "greeting",
+    "title": "Greetings and introductions",
+    "prompt": "hello hi hey greetings hola buenas buen dia good morning good afternoon welcome",
+    "answers": {
+      "en": "Hi! I’m Chattia, the OPS virtual assistant. Tell me in a few words what you need—services, hiring help, or just exploring—and I’ll guide you from there.",
+      "es": "¡Hola! Soy Chattia, asistente virtual de OPS. Cuéntame en pocas palabras qué necesitas—servicios, contratación o solo explorar—y te guío desde ahí."
     }
+  },
+  {
+    "id": "status",
+    "title": "Service availability",
+    "prompt": "service status availability outage offline mantenimiento estado",
+    "answers": {
+      "en": "Some parts of our platform may be in maintenance, so I’m working in a lighter mode. You can still tell me what you need; I’ll answer with what I have now and make sure your request is noted for follow-up if required.",
+      "es": "Es posible que algunas partes de la plataforma estén en mantenimiento, así que estoy trabajando en una versión más ligera. Igual puedes contarme qué necesitas; responderé con lo que tengo ahora y dejaré tu solicitud registrada para seguimiento si hace falta."
+    }
+  },
+  {
+    "id": "integrity",
+    "title": "Experience and safety checks",
+    "prompt": "integrity gateway summary ttl signature protocolos health resumen",
+    "answers": {
+      "en": "We regularly check that you are using the official OPS experience and that your session stays safe. If anything looks unstable, I’ll simply let you know we’re in a more cautious mode while everything settles.",
+      "es": "Revisamos de forma periódica que estés usando la experiencia oficial de OPS y que tu sesión se mantenga segura. Si algo se ve inestable, te avisaré de que estamos en un modo más cuidadoso mientras todo vuelve a la normalidad."
+    }
+  },
+  {
+    "id": "security",
+    "title": "Security and compliance",
+    "prompt": "security seguridad compliance cumplimiento pci nist cisa ops cybersec core governance gobernanza",
+    "answers": {
+      "en": "We treat your information with the same care that organisations use for banking-level security: limited access, strong protection, and clear rules on how data is handled. Even when we are in a reduced mode, we keep that standard.",
+      "es": "Tratamos tu información con el mismo cuidado que se usa en entornos de seguridad bancaria: acceso limitado, protección fuerte y reglas claras sobre cómo se maneja. Incluso en modo reducido mantenemos ese estándar."
+    }
+  },
+  {
+    "id": "ux",
+    "title": "UX and accessibility",
+    "prompt": "ux ui accessibility accesibilidad wcag progressive web app core web vitals experiencia",
+    "answers": {
+      "en": "OPS is designed to feel clear, accessible, and comfortable to use for as many people as possible, including those who rely on assistive tools. If something feels confusing or slow, tell me—I can note it so the team can improve the experience.",
+      "es": "OPS está diseñado para ser claro, accesible y cómodo de usar para la mayor cantidad de personas posible, incluyendo a quienes usan herramientas de apoyo. Si algo se siente confuso o lento, cuéntamelo y lo registraré para que el equipo mejore la experiencia."
+    }
+  },
+  {
+    "id": "payments",
+    "title": "Payments and data protection",
+    "prompt": "payments pagos pci tokens card datos sensibles encryption cifrado",
+    "answers": {
+      "en": "When you pay, sensitive card details are handled by our trusted payment partners in their own secure systems. We only receive safe confirmation tokens and basic status, not full card numbers.",
+      "es": "Cuando realizas un pago, los datos sensibles de la tarjeta los gestionan nuestros aliados de pago en sus propios sistemas seguros. Nosotros solo recibimos confirmaciones seguras y estado básico, nunca el número completo de la tarjeta."
+    }
+  },
+  {
+    "id": "privacy",
+    "title": "Privacy and governance",
+    "prompt": "privacy privacidad gdpr ccpa datos personales data retention retencion",
+    "answers": {
+      "en": "We follow modern privacy rules and keep your information only for as long as it is needed to help you. Short notes stored while we process your request are cleaned up instead of being kept indefinitely.",
+      "es": "Seguimos normas modernas de privacidad y conservamos tu información solo el tiempo necesario para ayudarte. Las notas temporales que usamos mientras atendemos tu solicitud se eliminan en lugar de guardarse indefinidamente."
+    }
+  },
+  {
+    "id": "observability",
+    "title": "Monitoring and reliability",
+    "prompt": "observability telemetry metrics lighthouse core web vitals logging monitoreo",
+    "answers": {
+      "en": "We keep an eye on speed, reliability, and error patterns so your experience is as smooth as possible. If you notice delays, glitches, or anything that feels off, describe it to me and I’ll save it for our reliability team.",
+      "es": "Cuidamos la rapidez, la estabilidad y los posibles errores para que tu experiencia sea lo más fluida posible. Si notas demoras, fallos o algo extraño, descríbelo y lo registraré para que el equipo de fiabilidad lo revise."
+    }
+  },
+  {
+    "id": "roadmap",
+    "title": "Roadmap and experimentation",
+    "prompt": "roadmap plan futuro features experimentos tiny llm tiny ml",
+    "answers": {
+      "en": "We are constantly improving OPS: more tailored answers, smoother experiences on slower connections, and easier ways to work with our remote professionals. Share what you would love to see next and I’ll flag it as input for the product team.",
+      "es": "Estamos mejorando OPS de forma continua: respuestas más personalizadas, una experiencia más suave incluso con conexiones lentas y formas más sencillas de trabajar con nuestro talento remoto. Cuéntame qué te gustaría ver y lo marcaré como aporte para el equipo de producto."
+    }
+  },
+  {
+    "id": "escalate",
+    "title": "Escalation request",
+    "prompt": "escalate escalation soporte support human agente contactar help ayuda",
+    "answers": {
+      "en": "I have noted that you would like support from a person. Tell me what is happening and what outcome you are looking for, and I’ll package that context so the human team can pick it up as soon as they are available.",
+      "es": "He registrado que quieres apoyo de una persona. Cuéntame qué está pasando y qué resultado buscas, y prepararé ese contexto para que el equipo humano lo tome en cuanto esté disponible."
+    }
+  },
+  {
+    "id": "goodbye",
+    "title": "Closing the session",
+    "prompt": "goodbye thanks thank you bye adios gracias",
+    "answers": {
+      "en": "Thank you for spending time with us today. If more questions come up later, just come back and we’ll continue from where we left off.",
+      "es": "Gracias por pasar por aquí hoy. Si luego te surgen más preguntas, solo vuelve y seguimos desde donde nos quedamos."
+    }
+  },
+  {
+    "id": "default",
+    "title": "General fallback",
+    "prompt": "general fallback default cualquier cosa",
+    "answers": {
+      "en": "I may not have the perfect tool for this question right now, but your message is saved so we can learn from it and, if needed, follow up through our usual channels. In the meantime, you can rephrase or ask from another angle.",
+      "es": "Puede que ahora no tenga la herramienta perfecta para esta pregunta, pero tu mensaje queda guardado para aprender de él y, si hace falta, darle seguimiento por los canales habituales. Mientras tanto, puedes reformular o preguntar desde otro enfoque."
+    }
+  }
 ]
