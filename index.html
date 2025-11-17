@@ -72,6 +72,7 @@ body{
   <div id="chatbot-header">
     <h1 id="titleEl">Chattia</h1>
     <div class="header-actions">
+      <button id="voiceCtrl" class="ctrl-btn" type="button" aria-pressed="false" aria-label="Toggle voice input">Voice</button>
       <button id="langCtrl" class="ctrl-btn" type="button" aria-pressed="false" aria-label="Switch language">ES</button>
       <button id="themeCtrl" class="ctrl-btn" type="button" aria-pressed="false">Dark</button>
     </div>
@@ -139,6 +140,7 @@ const sharedIntegrityHeaders = Object.freeze({
 
 /* ---------- UI refs ---------- */
 const titleEl = document.getElementById('titleEl');
+const voiceCtrl = document.getElementById('voiceCtrl');
 const langCtrl = document.getElementById('langCtrl');
 const themeCtrl = document.getElementById('themeCtrl');
 const statusBanner = document.getElementById('status-banner');
@@ -154,6 +156,7 @@ const state = { conversation:[], isSending:false };
 const integrityState = { timer:null, focusBound:false, summary:null, apiDegradedUntil:0 };
 const storage = (()=>{ try{return window.localStorage;}catch{return null;} })();
 const securityState = { lastSweep:null };
+const speechState = { recognition:null, listening:false, speakEnabled:false, supported:false, langCode:'en-US', allowTts:false };
 
 const i18n = Object.freeze({
   en:{ title:'Chattia', input:'Type your message… [Enter]', sendLabel:'Send message',
@@ -175,6 +178,7 @@ function setLocale(locale){
   send.setAttribute('aria-label', L.sendLabel);
   langCtrl.textContent = locale==='es'?'EN':'ES';
   refreshStatusBanner();
+  setSpeechLocale(locale);
   try{ localStorage.setItem('chattia:locale', locale); }catch{}
 }
 function cycleLocale(){ setLocale(currentLang()==='en'?'es':'en'); }
@@ -273,6 +277,74 @@ function updateSend(){
   send.disabled = disabled;
 }
 
+/* ---------- Speech recognition + TTS ---------- */
+function speechSupported(){ return typeof window !== 'undefined' && ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window); }
+function ttsSupported(){ return typeof window !== 'undefined' && 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window; }
+
+function updateVoiceUi(){
+  if(!voiceCtrl) return;
+  if(!speechState.supported){
+    voiceCtrl.textContent = 'No mic';
+    voiceCtrl.disabled = true;
+    voiceCtrl.setAttribute('aria-pressed','false');
+    voiceCtrl.title = 'Speech recognition not supported in this browser';
+    return;
+  }
+  voiceCtrl.disabled = false;
+  voiceCtrl.textContent = speechState.listening ? 'Stop' : 'Voice';
+  voiceCtrl.setAttribute('aria-pressed', speechState.listening ? 'true' : 'false');
+  voiceCtrl.title = speechState.listening ? 'Listening… click to stop' : 'Click to start voice capture';
+}
+
+function setSpeechLocale(locale){
+  const langCode = locale==='es' ? 'es-EC' : 'en-US';
+  speechState.langCode = langCode;
+  if (speechState.recognition) speechState.recognition.lang = langCode;
+}
+
+function speakReply(text){
+  if(!speechState.speakEnabled || !speechState.allowTts || !ttsSupported()) return;
+  const utterance = new SpeechSynthesisUtterance(String(text||''));
+  utterance.lang = speechState.langCode || 'en-US';
+  try{ speechSynthesis.cancel(); }catch{}
+  speechSynthesis.speak(utterance);
+}
+
+function setupSpeech(){
+  speechState.supported = speechSupported();
+  speechState.speakEnabled = ttsSupported();
+  if(!speechState.supported){ updateVoiceUi(); return; }
+  const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  speechState.recognition = new Recognition();
+  speechState.recognition.continuous = false;
+  speechState.recognition.interimResults = false;
+  speechState.recognition.maxAlternatives = 1;
+  setSpeechLocale(currentLang());
+
+  speechState.recognition.onstart = ()=>{ speechState.listening=true; updateVoiceUi(); };
+  speechState.recognition.onend = ()=>{ speechState.listening=false; updateVoiceUi(); };
+  speechState.recognition.onerror = ()=>{ speechState.listening=false; updateVoiceUi(); };
+  speechState.recognition.onresult = (event)=>{
+    const transcript = (event.results?.[0]?.[0]?.transcript || '').trim();
+    if(!transcript) return;
+    input.value = transcript;
+    updateSend();
+    form.requestSubmit();
+  };
+  updateVoiceUi();
+}
+
+function toggleVoice(){
+  if(!speechState.recognition) return;
+  if(speechState.listening){
+    try{ speechState.recognition.stop(); }catch{}
+  } else {
+    speechState.allowTts = speechState.allowTts || speechState.speakEnabled;
+    try{ speechState.recognition.start(); speechState.listening=true; }catch{}
+  }
+  updateVoiceUi();
+}
+
 /* ---------- Integrity signing ---------- */
 function hexNonce32(){ return randomHex(16); }
 async function sha256Hex(input){
@@ -320,6 +392,8 @@ function bootstrapConversation(){
 }
 setLocale((()=>{ try{ return localStorage.getItem('chattia:locale')||'en'; }catch{return 'en';} })());
 langCtrl.addEventListener('click', cycleLocale);
+setupSpeech();
+voiceCtrl?.addEventListener('click', toggleVoice);
 bootstrapConversation();
 startIntegrityMonitor();
 
@@ -361,6 +435,7 @@ form.addEventListener('submit', async (e)=>{
       const fb = fallbackReply(msg);
       thinking.textContent = fb;
       recordMessage('assistant', fb, { source:'fallback', reason:'low_confidence', upstreamReply: reply||null, confidence });
+      speakReply(fb);
       // notify CF Worker for telemetry
       try{
         fetch(ESCALATION_URL, {
@@ -372,6 +447,7 @@ form.addEventListener('submit', async (e)=>{
     } else {
       thinking.textContent = reply;
       recordMessage('assistant', reply, { source:'api', confidence });
+      speakReply(reply);
     }
     clearApiDegraded();
     refreshStatusBanner('gatewayReady', { ttl: getSummaryTtl(integrityState.summary) ?? 'N/A' });
@@ -380,6 +456,7 @@ form.addEventListener('submit', async (e)=>{
     const fb = fallbackReply(msg);
     thinking.textContent = fb;
     recordMessage('assistant', fb, { source:'fallback', reason:'network_error', error: String(err?.message||'error') });
+    speakReply(fb);
     refreshStatusBanner('apiDegraded');
     try{
       fetch(ESCALATION_URL, {
