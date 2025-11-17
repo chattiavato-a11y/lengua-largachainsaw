@@ -112,7 +112,7 @@ body{
     <div class="header-actions">
       <button id="voiceCtrl" class="ctrl-btn" type="button" aria-pressed="false" aria-label="Toggle voice input">Voice</button>
       <button id="langCtrl" class="ctrl-btn" type="button" aria-pressed="false" aria-label="Switch language">ES</button>
-      <button id="themeCtrl" class="ctrl-btn hidden" type="button" aria-pressed="false">Theme</button>
+      <button id="themeCtrl" class="ctrl-btn" type="button" aria-pressed="false" aria-label="Toggle theme">Dark</button>
     </div>
   </div>
   <div id="status-banner" class="status-online"><span id="statusText">Secure link active</span></div>
@@ -130,7 +130,7 @@ body{
   </div>
 </div>
 
-<button id="themeFab" class="fab theme-fab" type="button" aria-live="polite" aria-pressed="false">
+<button id="themeFab" class="fab theme-fab hidden" type="button" aria-live="polite" aria-pressed="false">
   <i class="fa fa-circle-half-stroke"></i>
   <span class="fab-label" id="themeFabLabel">Light</span>
 </button>
@@ -359,6 +359,7 @@ function applyThemeTokens(theme){
   document.body.dataset.theme = theme;
   document.body.classList.add('with-transition');
   updateThemeFab(theme);
+  updateThemeCtrl(theme);
   try{ localStorage.setItem(THEME_KEY, theme); }catch{}
 }
 
@@ -367,6 +368,14 @@ function updateThemeFab(theme){
   const label = theme==='high-contrast' ? 'High contrast' : (theme==='dark'?'Dark':'Light');
   themeFabLabel.textContent = label;
   themeFab.setAttribute('aria-pressed', theme==='dark');
+}
+
+function updateThemeCtrl(theme){
+  if(!themeCtrl) return;
+  const label = theme==='high-contrast' ? 'High contrast' : (theme==='dark' ? 'Dark' : 'Light');
+  themeCtrl.textContent = label.toUpperCase();
+  themeCtrl.setAttribute('aria-pressed', theme==='dark' || theme==='high-contrast');
+  themeCtrl.setAttribute('aria-label', `Current theme: ${label}. Click to change`);
 }
 
 function cycleTheme(){
@@ -400,6 +409,7 @@ function initTheme(){
 }
 
 themeFab?.addEventListener('click', cycleTheme);
+themeCtrl?.addEventListener('click', cycleTheme);
 fetchThemeConfig().finally(initTheme);
 
 /* ---------- Status / Integrity ---------- */
