@@ -163,6 +163,12 @@
     );
   }
 
+  function listPillars(lang, bullet = "• ") {
+    return getPillars(lang)
+      .map((entry) => `${bullet}${entry}`)
+      .join("\n");
+  }
+
   function getProofPoints(lang) {
     const d = SERVICE_DIRECTORY;
     return lang === "es" ? d.proofPointsEs || d.proofPoints : d.proofPoints;
@@ -180,6 +186,32 @@
     return lang === "es"
       ? d.contactPathwaysEs || d.contactPathways
       : d.contactPathways;
+  }
+
+  function buildOverview(lang, withProof = false) {
+    const nameLine = `${SERVICE_DIRECTORY.overview.name} — ${getFocus(lang)}`;
+    const pillarList = listPillars(lang);
+    const proofList = getProofPoints(lang)
+      .map((item) => `• ${item}`)
+      .join("\n");
+
+    if (lang === "es") {
+      const base = `${nameLine}\n\nPilares de servicio:\n${pillarList}`;
+      if (!withProof) {
+        return `${base}\n\n¿Quieres ver opciones o agendar una discovery call? Normalmente respondemos en un día hábil.`;
+      }
+      return (
+        `${base}\n\nResultados que buscamos:\n${proofList}\n\n¿Quieres ver opciones o agendar una discovery call? Normalmente respondemos en un día hábil.`
+      );
+    }
+
+    const base = `${nameLine}\n\nService pillars:\n${pillarList}`;
+    if (!withProof) {
+      return `${base}\n\nWant options or a discovery call? We usually reply within one business day.`;
+    }
+    return (
+      `${base}\n\nSome of the results we focus on:\n${proofList}\n\nWant options or a discovery call? We usually reply within one business day.`
+    );
   }
 
   function detectLang(text, hint) {
@@ -270,29 +302,13 @@
       id: "overview.en",
       lang: "en",
       q: /(what\s+is|who\s+are|about|overview|summary|intro|explain)\b|^ops\b|^chattia\b/i,
-      a: () => {
-        const pillars = getPillars("en").map((p) => "• " + p).join("\n");
-        const proof = getProofPoints("en").map((p) => "• " + p).join("\n");
-        return (
-          `${SERVICE_DIRECTORY.overview.name} — ${getFocus("en")}\n\n` +
-          `Main service pillars:\n${pillars}\n\n` +
-          `Some of the results we focus on:\n${proof}`
-        );
-      }
+      a: () => buildOverview("en", true)
     },
     {
       id: "overview.es",
       lang: "es",
       q: /(qué\s+es|quiénes\s+son|acerca|resumen|introducci[oó]n|explica|explicaci[oó]n)\b|^ops\b|^chattia\b/i,
-      a: () => {
-        const pillars = getPillars("es").map((p) => "• " + p).join("\n");
-        const proof = getProofPoints("es").map((p) => "• " + p).join("\n");
-        return (
-          `${SERVICE_DIRECTORY.overview.name} — ${getFocus("es")}\n\n` +
-          `Pilares principales:\n${pillars}\n\n` +
-          `Resultados que buscamos:\n${proof}`
-        );
-      }
+      a: () => buildOverview("es", true)
     },
     {
       id: "solutions.en",
@@ -370,11 +386,7 @@
       if (item.q.test(text)) return item.a();
     }
 
-    const focus = getFocus(lang);
-    if (lang === "es") {
-      return `${SERVICE_DIRECTORY.overview.name} — ${focus}`;
-    }
-    return `${SERVICE_DIRECTORY.overview.name} — ${focus}`;
+    return buildOverview(lang, false);
   }
 
   window.FallbackKB = Object.freeze({ reply });
