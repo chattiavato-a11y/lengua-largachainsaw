@@ -51,7 +51,7 @@ body{
 #chatbot-header{ display:flex; align-items:center; gap:.5rem; justify-content:space-between;
   padding:.7rem .9rem; background:linear-gradient(135deg,var(--clr-primary),var(--clr-accent)); color:#fff }
 #chatbot-header h1{ margin:0; font-size:1.05rem }
-.header-actions{ display:flex; gap:.5rem }
+.header-actions{ display:flex; gap:.5rem; align-items:center }
 .ctrl-btn{ background:rgba(255,255,255,.18); border:none; border-radius:999px; color:#fff; padding:.3rem .8rem; font-weight:600;
  cursor:pointer }
 .ctrl-btn:focus-visible{ outline:2px solid #fff; outline-offset:2px }
@@ -92,6 +92,13 @@ body{
   @supports(height:100dvh){ #chatbot-container{height:100dvh} }
   .fab{ right:12px }
 }
+
+@media (max-width:720px){
+  #chatbot-header{ flex-wrap:wrap; align-items:flex-start }
+  .header-actions{ width:100%; justify-content:flex-end; flex-wrap:wrap; gap:.4rem }
+  .ctrl-btn{ padding:.35rem .65rem; font-size:.9rem }
+  .sticky-footer{ display:none }
+}
 </style>
 </head>
 <body>
@@ -102,7 +109,7 @@ body{
     <div class="header-actions">
       <button id="voiceCtrl" class="ctrl-btn" type="button" aria-pressed="false" aria-label="Toggle voice input">Voice</button>
       <button id="langCtrl" class="ctrl-btn" type="button" aria-pressed="false" aria-label="Switch language">ES</button>
-      <button id="themeCtrl" class="ctrl-btn hidden" type="button" aria-pressed="false">Theme</button>
+      <button id="themeCtrl" class="ctrl-btn" type="button" aria-pressed="false" aria-label="Toggle theme">Dark</button>
     </div>
   </div>
   <div id="status-banner" class="status-online"><span id="statusText">Secure link active</span></div>
@@ -119,7 +126,7 @@ body{
   </div>
 </div>
 
-<button id="themeFab" class="fab theme-fab" type="button" aria-live="polite" aria-pressed="false">
+<button id="themeFab" class="fab theme-fab hidden" type="button" aria-live="polite" aria-pressed="false">
   <i class="fa fa-circle-half-stroke"></i>
   <span class="fab-label" id="themeFabLabel">Light</span>
 </button>
@@ -288,6 +295,7 @@ function applyThemeTokens(theme){
   document.body.dataset.theme = theme;
   document.body.classList.add('with-transition');
   updateThemeFab(theme);
+  updateThemeCtrl(theme);
   try{ localStorage.setItem(THEME_KEY, theme); }catch{}
 }
 
@@ -296,6 +304,14 @@ function updateThemeFab(theme){
   const label = theme==='high-contrast' ? 'High contrast' : (theme==='dark'?'Dark':'Light');
   themeFabLabel.textContent = label;
   themeFab.setAttribute('aria-pressed', theme==='dark');
+}
+
+function updateThemeCtrl(theme){
+  if(!themeCtrl) return;
+  const label = theme==='high-contrast' ? 'High contrast' : (theme==='dark' ? 'Dark' : 'Light');
+  themeCtrl.textContent = label.toUpperCase();
+  themeCtrl.setAttribute('aria-pressed', theme==='dark' || theme==='high-contrast');
+  themeCtrl.setAttribute('aria-label', `Current theme: ${label}. Click to change`);
 }
 
 function cycleTheme(){
@@ -329,6 +345,7 @@ function initTheme(){
 }
 
 themeFab?.addEventListener('click', cycleTheme);
+themeCtrl?.addEventListener('click', cycleTheme);
 fetchThemeConfig().finally(initTheme);
 
 /* ---------- Status / Integrity ---------- */
