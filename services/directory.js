@@ -116,64 +116,120 @@ export const SERVICE_DIRECTORY = Object.freeze({
   }
 });
 
-function formatBulletedSection(title, lines) {
-  return [`${title}:`, ...lines.map(line => `- ${line}`)].join("\n");
+export function formatBulletedSection(title, lines) {
+  const items = (lines || []).filter(Boolean);
+  if (!items.length) return "";
+  return [`${title}:`, ...items.map((line) => `- ${line}`)].join("\n");
 }
 
 function buildServiceDirectoryPrompt(locale = "en") {
   const isEs = locale === "es";
   const t = (en, es) => (isEs ? es : en);
-  const overview = SERVICE_DIRECTORY.overview;
-  const focus = isEs ? overview.focusEs || overview.focus : overview.focus;
-  const pillars = SERVICE_DIRECTORY.servicePillars.map(
-    pillar => `${pillar.name} – ${isEs ? pillar.summaryEs || pillar.summary : pillar.summary}`
+
+  const overview = SERVICE_DIRECTORY.overview || {};
+  const overviewName = overview.name || "OPS Remote Professional Network";
+  const focus = (isEs ? overview.focusEs || overview.focus : overview.focus) || "";
+
+  const pillars = (SERVICE_DIRECTORY.servicePillars || []).map(
+    (pillar) =>
+      `${pillar.name} – ${
+        isEs ? pillar.summaryEs || pillar.summary : pillar.summary
+      }`
   );
-  const solutions = SERVICE_DIRECTORY.solutions.map(
-    solution => `${solution.name} – ${isEs ? solution.coverageEs || solution.coverage : solution.coverage}`
+
+  const solutions = (SERVICE_DIRECTORY.solutions || []).map(
+    (solution) =>
+      `${solution.name} – ${
+        isEs ? solution.coverageEs || solution.coverage : solution.coverage
+      }`
   );
+
   const proofPoints = isEs
     ? SERVICE_DIRECTORY.proofPointsEs || SERVICE_DIRECTORY.proofPoints
     : SERVICE_DIRECTORY.proofPoints;
+
   const talentHighlights = isEs
-    ? SERVICE_DIRECTORY.talentNetwork.applicationHighlightsEs || SERVICE_DIRECTORY.talentNetwork.applicationHighlights
+    ? SERVICE_DIRECTORY.talentNetwork.applicationHighlightsEs ||
+      SERVICE_DIRECTORY.talentNetwork.applicationHighlights
     : SERVICE_DIRECTORY.talentNetwork.applicationHighlights;
+
   const commitments = isEs
-    ? SERVICE_DIRECTORY.talentNetwork.commitmentsEs || SERVICE_DIRECTORY.talentNetwork.commitments
+    ? SERVICE_DIRECTORY.talentNetwork.commitmentsEs ||
+      SERVICE_DIRECTORY.talentNetwork.commitments
     : SERVICE_DIRECTORY.talentNetwork.commitments;
+
   const contact = isEs
     ? SERVICE_DIRECTORY.contactPathwaysEs || SERVICE_DIRECTORY.contactPathways
     : SERVICE_DIRECTORY.contactPathways;
 
-  return [
+  const intro = [
     t(
-      "Use this OPS Remote Professional Network service directory as authoritative context for every response.",
-      "Usa este directorio de servicios de OPS Remote Professional Network como contexto autorizado para cada respuesta."
+      "Use this summary of the OPS Remote Professional Network when answering questions about OPS services and talent.",
+      "Usa este resumen de OPS Remote Professional Network al responder preguntas sobre servicios y talento de OPS."
     ),
     t(
-      "Always ground answers in the catalog and explicitly connect recommendations to the appropriate pillar or solution when relevant.",
-      "Sustenta cada respuesta en este catálogo y vincula explícitamente las recomendaciones con el pilar o la solución correspondiente."
+      "When it makes sense, connect your recommendations back to the pillars or solutions that best fit the situation.",
+      "Cuando tenga sentido, vincula tus recomendaciones con los pilares o soluciones que mejor encajen con la situación."
     ),
     t(
-      "Respond in the user's preferred language (English or Spanish) without translating the OPS product names.",
-      "Responde en el idioma preferido de la persona (inglés o español) sin traducir los nombres de productos OPS."
-    ),
-    "",
-    `${t("Overview", "Resumen")}: ${overview.name} — ${focus}`,
+      "Answer in the person’s preferred language (English or Spanish) and keep the OPS product names as they are.",
+      "Responde en el idioma preferido de la persona (inglés o español) y mantén los nombres de productos OPS tal como están."
+    )
+  ];
+
+  const bullets = [
+    `${t("Overview", "Resumen")}: ${overviewName} — ${focus}`,
     formatBulletedSection(t("Service Pillars", "Pilares de Servicio"), pillars),
     formatBulletedSection(t("Solutions", "Soluciones"), solutions),
-    formatBulletedSection(t("Operational Proof Points", "Pruebas Operativas"), proofPoints),
+    formatBulletedSection(
+      t("Operational Highlights", "Pruebas Operativas"),
+      proofPoints
+    ),
     formatBulletedSection(
       t("Talent Network Highlights", "Highlights de la Red de Talento"),
       talentHighlights
     ),
-    formatBulletedSection(t("Community Commitments", "Compromisos con la Comunidad"), commitments),
-    formatBulletedSection(t("Contact & Hiring Pathways", "Rutas de Contacto y Contratación"), contact),
-    t("Content Metrics:", "Métricas de contenido:"),
-    `${t("- Homepage characters", "- Caracteres de la página de inicio")}: ${SERVICE_DIRECTORY.contentMetrics.homepageCharacters}`,
-    `${t("- Chatbot panel characters", "- Caracteres del panel del chatbot")}: ${SERVICE_DIRECTORY.contentMetrics.chatbotPanelCharacters}`,
-    `${t("- Talent application characters", "- Caracteres de la aplicación de talento")}: ${SERVICE_DIRECTORY.contentMetrics.talentApplicationCharacters}`,
-    `${t("- Contact page characters", "- Caracteres de la página de contacto")}: ${SERVICE_DIRECTORY.contentMetrics.contactPageCharacters}`
-  ].join("\n");
+    formatBulletedSection(
+      t("Community Commitments", "Compromisos con la Comunidad"),
+      commitments
+    ),
+    formatBulletedSection(
+      t("Contact & Hiring Pathways", "Rutas de Contacto y Contratación"),
+      contact
+    )
+  ].filter(Boolean);
+
+  const metrics = SERVICE_DIRECTORY.contentMetrics || {};
+  const metricLines = [
+    t("Content snapshot:", "Resumen de contenido:"),
+    metrics.homepageCharacters
+      ? `${t("- Homepage characters", "- Caracteres de la página de inicio")}: ${metrics.homepageCharacters}`
+      : "",
+    metrics.chatbotPanelCharacters
+      ? `${t("- Chatbot panel characters", "- Caracteres del panel del chatbot")}: ${metrics.chatbotPanelCharacters}`
+      : "",
+    metrics.talentApplicationCharacters
+      ? `${t(
+          "- Talent application characters",
+          "- Caracteres de la aplicación de talento"
+        )}: ${metrics.talentApplicationCharacters}`
+      : "",
+    metrics.contactPageCharacters
+      ? `${t(
+          "- Contact page characters",
+          "- Caracteres de la página de contacto"
+        )}: ${metrics.contactPageCharacters}`
+      : ""
+  ].filter(Boolean);
+
+  const sections = [
+    ...intro,
+    "",
+    ...bullets,
+    ...(metricLines.length ? ["", ...metricLines] : [])
+  ].filter((line, idx, arr) => line !== "" || arr[idx - 1] !== "");
+
+  return sections.join("\n");
 }
 
 export const SERVICE_DIRECTORY_PROMPTS = Object.freeze({
