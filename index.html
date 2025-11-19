@@ -51,7 +51,6 @@ body{
 #chatbot-header{ display:flex; align-items:center; gap:.5rem; justify-content:flex-start;
   padding:.7rem .9rem; background:linear-gradient(135deg,var(--clr-primary),var(--clr-accent)); color:#fff }
 #chatbot-header h1{ margin:0; font-size:1.05rem }
-
 .control-dock{ display:flex; flex-wrap:wrap; gap:.45rem; margin-bottom:.6rem }
 .dock-btn{
   background:var(--control-bg);
@@ -66,7 +65,6 @@ body{
 }
 .dock-btn:focus-visible{ outline:3px solid var(--outline-strong); outline-offset:2px }
 .dock-btn[disabled]{ opacity:.65; cursor:not-allowed }
-
 #status-banner{ background:var(--surface-soft); color:#fff; padding:.45rem .9rem; font-size:.85rem }
 #status-banner .status-content{ display:flex; align-items:center; justify-content:space-between; gap:.75rem }
 #status-banner .status-content span{ flex:1 }
@@ -79,12 +77,22 @@ body{
 #status-banner.status-online{ background:rgba(0,200,110,.25) }
 #status-banner.status-offline{ background:rgba(230,0,0,.25) }
 #status-banner.status-fallback{ background:rgba(255,180,0,.25) }
-
+.status-inspector-toggle{ background:transparent; color:inherit; border:1px solid rgba(255,255,255,.2); border-radius:999px; padding:.3rem .7rem; cursor:pointer; font-weight:700; display:flex; align-items:center; gap:.35rem }
+.status-inspector-toggle:focus-visible{ outline:3px solid var(--outline-strong); outline-offset:2px }
+.status-inspector{ background:var(--surface-soft); color:var(--body-text); border-top:1px solid rgba(255,255,255,.1); padding:.6rem .9rem; display:grid; gap:.5rem; font-size:.83rem }
+.status-inspector .meta-grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:.45rem .75rem }
+.status-inspector .meta-line{ display:flex; gap:.45rem; align-items:center }
+.status-inspector .meta-label{ font-weight:700; text-transform:uppercase; letter-spacing:.03em; font-size:.75rem; opacity:.8 }
+.status-inspector .meta-value{ word-break:break-all }
+.status-inspector .meta-pill{ display:inline-flex; align-items:center; gap:.35rem; padding:.25rem .55rem; background:var(--control-bg); border-radius:999px; border:1px solid rgba(255,255,255,.16) }
+.status-inspector .pill-dot{ width:9px; height:9px; border-radius:50%; background:#20ffb4; box-shadow:0 0 8px rgba(32,255,180,.8) }
+.status-inspector .pill-dot.warn{ background:#ffb347; box-shadow:0 0 8px rgba(255,179,71,.8) }
+.status-inspector .pill-dot.bad{ background:#ff4d7a; box-shadow:0 0 8px rgba(255,77,122,.8) }
+.status-inspector .note{ margin:0; color:rgba(255,255,255,.8) }
 #chat-log{ flex:1; overflow:auto; padding:1rem; background:var(--surface-alt); color:var(--bot-text); font-size:.95rem }
 .chat-msg{ margin:.5rem 0; max-width:90%; line-height:1.35; word-wrap:break-word }
 .user{ margin-left:auto; background:var(--clr-primary); color:var(--user-text); padding:.5rem .7rem; border-radius:16px 16px 0 16px }
 .bot{ margin-right:auto; background:var(--bot-bg); color:var(--bot-text); padding:.5rem .7rem; border-radius:16px 16px 16px 0 }
-
 #chatbot-form-container{ background:var(--surface-soft); border-top:1px solid rgba(255,255,255,.12); padding:.65rem .9rem calc(.65rem + env(safe-area-inset-bottom)) }
 #chatbot-form-container .inline-popover{ background:var(--surface); border:2px solid var(--clr-primary); border-radius:14px; padding:.85rem; margin-bottom:.65rem; box-shadow:0 12px 30px rgba(5,1,17,.35) }
 .inline-popover h3{ margin-top:0 }
@@ -92,11 +100,6 @@ body{
 #chatbot-input-row{ display:flex; gap:.6rem; align-items:stretch }
 #chatbot-input{ flex:1; background:var(--control-bg); border:none; border-radius:12px; color:var(--bot-text); font-size:.95rem; padding:.6rem .75rem }
 #chatbot-send{ display:flex; align-items:center; justify-content:center; gap:6px; background:var(--clr-accent); border:none; color:#fff; font-weight:600; padding:.55rem .95rem; border-radius:12px; cursor:pointer; box-shadow:0 6px 16px rgba(255,59,219,.35) }
-.fab{ position:fixed; right:18px; width:54px; height:54px; border-radius:50%; border:none; color:#0b0b0b; font-weight:700; box-shadow:0 12px 28px rgba(5,1,17,.28); cursor:pointer; background:linear-gradient(135deg,var(--clr-primary),var(--clr-accent)); z-index:20; display:flex; align-items:center; justify-content:center; gap:6px; transition:transform .25s ease, box-shadow .25s ease }
-.fab:hover{ transform:translateY(-2px); box-shadow:0 14px 30px rgba(5,1,17,.35) }
-.theme-fab{ bottom:86px; }
-.support-fab{ bottom:22px; background:var(--surface); color:var(--body-text); border:2px solid var(--clr-accent); font-size:1.1rem }
-.fab-label{ font-size:.65rem; font-weight:600 }
 .fab:focus-visible,.ctrl-btn:focus-visible,#chatbot-input:focus-visible,#chatbot-send:focus-visible{ outline:3px solid var(--outline-strong); outline-offset:3px }
   .inline-popover .modal{ border:none; box-shadow:none }
   .modal-header{ display:flex; align-items:center; justify-content:space-between; margin-bottom:.65rem }
@@ -135,6 +138,10 @@ body{
       <span class="sync-dot" aria-hidden="true"></span>
       <span id="syncLabel" class="sync-label">[SYNC]</span>
     </div>
+    <button id="statusInspectorToggle" class="status-inspector-toggle" type="button" aria-expanded="false" aria-controls="statusInspector">
+      <i class="fa fa-circle-info" aria-hidden="true"></i>
+      Status details
+    </button>
   </div>
 </div>
   <div id="chat-log" aria-live="polite"></div>
@@ -203,13 +210,11 @@ function randomHex(bytes = 16){
   return fallback;
 }
 const SESSION_NONCE = randomHex(16);
-
 const API_BASE = INTEGRITY_GATEWAY;           // single Worker handles auth+chat+stt
 const CHAT_PATH = '/api/chat';
 const STT_PATH  = '/api/stt';
 const AUTH_URL  = `${API_BASE}/auth/issue`;
 const ESCALATION_URL = `${API_BASE}/fallback/escalate`;
-
 const STATUS_POLL_INTERVAL_MS = 30000;
 const API_DEGRADE_MEMORY_MS = 90000;
 const CONFIDENCE_THRESHOLD = 'low'; // escalate when server marks "low"
@@ -246,13 +251,11 @@ const supportOverlay = document.getElementById('resetPopover');
 const supportClose = document.getElementById('supportClose');
 const resetThreadBtn = document.getElementById('resetThread');
 const submitFeedbackBtn = document.getElementById('submitFeedback');
-
 const state = { conversation:[], isSending:false };
-const integrityState = { timer:null, focusBound:false, summary:null, apiDegradedUntil:0 };
+const integrityState = { timer:null, focusBound:false, summary:null, apiDegradedUntil:0, lastChecked:null, lastError:null, lastTtl:null };
 const storage = (()=>{ try{return window.localStorage;}catch{return null;} })();
 const securityState = { lastSweep:null };
-const speechState = { recognition:null, listening:false, speakEnabled:false, supported:false, langCode:'en-US', allowTts:false };
-
+const speechState = { recognition:null, listening:false, speakEnabled:false, supported:false, langCode:'en-US', allowTts:false, warnedUnsupported:false };
 const { create } = window.zustand || {};
 const defaultThemes = Object.freeze({
   dark:{ tokens:{
@@ -302,12 +305,21 @@ function setLocale(locale){
   titleEl.textContent = L.title;
   input.placeholder = L.input;
   send.setAttribute('aria-label', L.sendLabel);
-  langCtrl.textContent = locale==='es'?'EN':'ES';
+  updateLangCtrl(locale);
   refreshStatusBanner();
   setSpeechLocale(locale);
   try{ localStorage.setItem('chattia:locale', locale); }catch{}
 }
 function cycleLocale(){ setLocale(currentLang()==='en'?'es':'en'); }
+
+function updateLangCtrl(locale){
+  if(!langCtrl) return;
+  const isEs = locale === 'es';
+  langCtrl.textContent = isEs ? 'EN' : 'ES';
+  langCtrl.setAttribute('aria-pressed', isEs ? 'true' : 'false');
+  langCtrl.classList.toggle('active', isEs);
+  langCtrl.setAttribute('aria-label', isEs ? 'Idioma actual español. Cambiar a inglés' : 'Current language English. Switch to Spanish');
+}
 
 /* ---------- Theme ---------- */
 const THEME_KEY = 'chattia-theme';
@@ -321,16 +333,8 @@ function applyThemeTokens(theme){
   Object.entries(tokens).forEach(([k,v])=> root.style.setProperty(`--${k}`, v));
   document.body.dataset.theme = theme;
   document.body.classList.add('with-transition');
-  updateThemeFab(theme);
   updateThemeCtrl(theme);
   try{ localStorage.setItem(THEME_KEY, theme); }catch{}
-}
-
-function updateThemeFab(theme){
-  if(!themeFab || !themeFabLabel) return;
-  const label = theme==='high-contrast' ? 'High contrast' : (theme==='dark'?'Dark':'Light');
-  themeFabLabel.textContent = label;
-  themeFab.setAttribute('aria-pressed', theme==='dark');
 }
 
 function updateThemeCtrl(theme){
@@ -338,6 +342,7 @@ function updateThemeCtrl(theme){
   const label = theme==='high-contrast' ? 'High contrast' : (theme==='dark' ? 'Dark' : 'Light');
   themeCtrl.textContent = label.toUpperCase();
   themeCtrl.setAttribute('aria-pressed', theme==='dark' || theme==='high-contrast');
+  themeCtrl.classList.toggle('active', theme!=='light');
   themeCtrl.setAttribute('aria-label', `Current theme: ${label}. Click to change`);
 }
 
@@ -371,7 +376,6 @@ function initTheme(){
   applyThemeTokens(initial);
 }
 
-themeFab?.addEventListener('click', cycleTheme);
 themeCtrl?.addEventListener('click', cycleTheme);
 fetchThemeConfig().finally(initTheme);
 
@@ -430,13 +434,17 @@ async function pollIntegritySummary(){
     if(!res.ok) throw new Error('integrity_health_error:'+res.status);
     const data = await res.json();
     integrityState.summary = data;
+    integrityState.lastChecked = Date.now();
+    integrityState.lastError = null;
+    integrityState.lastTtl = getSummaryTtl(data);
     if(!isApiDegraded()){
-      const ttl = getSummaryTtl(data);
+      const ttl = integrityState.lastTtl;
       refreshStatusBanner('gatewayReady', { ttl: Number.isFinite(ttl) ? ttl : 'N/A' });
     }
     return data;
   }catch{
     integrityState.summary = null;
+    integrityState.lastError = 'Integrity gateway unreachable';
     if(!isApiDegraded()) refreshStatusBanner('gatewayDegraded');
     return null;
   }
@@ -531,12 +539,14 @@ function updateVoiceUi(){
     voiceCtrl.disabled = true;
     voiceCtrl.setAttribute('aria-pressed','false');
     voiceCtrl.title = 'Speech recognition not supported in this browser';
+    voiceCtrl.classList.remove('active');
     return;
   }
   voiceCtrl.disabled = false;
   voiceCtrl.textContent = speechState.listening ? 'Stop' : 'Voice';
   voiceCtrl.setAttribute('aria-pressed', speechState.listening ? 'true' : 'false');
   voiceCtrl.title = speechState.listening ? 'Listening… click to stop' : 'Click to start voice capture';
+  voiceCtrl.classList.toggle('active', speechState.listening);
 }
 
 function setSpeechLocale(locale){
@@ -578,7 +588,13 @@ function setupSpeech(){
 }
 
 function toggleVoice(){
-  if(!speechState.recognition) return;
+  if(!speechState.recognition){
+    if(!speechState.supported && !speechState.warnedUnsupported){
+      addMsg('Voice capture is not available in this browser.', 'bot');
+      speechState.warnedUnsupported = true;
+    }
+    return;
+  }
   if(speechState.listening){
     try{ speechState.recognition.stop(); }catch{}
   } else {
