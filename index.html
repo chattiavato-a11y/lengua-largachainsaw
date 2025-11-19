@@ -48,18 +48,54 @@ body{
   display:flex; flex-direction:column; box-shadow:0 20px 50px rgba(5,1,17,.45); z-index:10
 }
 @supports (height:100dvh){ #chatbot-container{height:min(680px,calc(100dvh - 32px))} }
-#chatbot-header{ display:flex; align-items:center; gap:.5rem; justify-content:space-between;
+#chatbot-header{ display:flex; align-items:center; gap:.5rem; justify-content:flex-start;
   padding:.7rem .9rem; background:linear-gradient(135deg,var(--clr-primary),var(--clr-accent)); color:#fff }
 #chatbot-header h1{ margin:0; font-size:1.05rem }
-.header-actions{ display:flex; gap:.5rem; align-items:center }
-.ctrl-btn{ background:rgba(255,255,255,.18); border:none; border-radius:999px; color:#fff; padding:.3rem .8rem; font-weight:600;
- cursor:pointer }
-.ctrl-btn:focus-visible{ outline:2px solid #fff; outline-offset:2px }
 
-#status-banner{ background:var(--surface-soft); color:#fff; padding:.4rem .8rem; font-size:.85rem }
+.control-dock{ display:flex; flex-wrap:wrap; gap:.45rem; margin-bottom:.6rem }
+.dock-btn{
+  background:var(--control-bg);
+  border:1px solid rgba(255,255,255,.18);
+  border-radius:999px;
+  color:var(--body-text);
+  padding:.35rem .85rem;
+  font-weight:600;
+  font-size:.85rem;
+  cursor:pointer;
+  text-transform:uppercase;
+}
+.dock-btn.active{
+  border-color:var(--clr-primary);
+  box-shadow:0 0 0 2px rgba(0,196,255,.2);
+}
+.dock-btn:focus-visible{ outline:3px solid var(--outline-strong); outline-offset:2px }
+.dock-btn[disabled]{ opacity:.65; cursor:not-allowed }
+
+#status-banner{ background:var(--surface-soft); color:#fff; padding:.45rem .9rem; font-size:.85rem }
+#status-banner .status-content{ display:flex; align-items:center; justify-content:space-between; gap:.75rem; flex-wrap:wrap }
+#status-banner .status-content span{ flex:1 }
+.sync-indicator{ display:flex; align-items:center; gap:.35rem; font-size:.75rem; font-weight:700; letter-spacing:.08em }
+.sync-dot{ width:10px; height:10px; border-radius:50%; box-shadow:0 0 8px rgba(255,255,255,.4); background:#ff3bdb }
+#syncIndicator[data-state="linked"] .sync-dot{ background:#20ffb4; box-shadow:0 0 8px rgba(32,255,180,.9) }
+#syncIndicator[data-state="linked"] .sync-label{ color:#20ffb4 }
+#syncIndicator[data-state="unlinked"] .sync-dot{ background:#ff4d7a; box-shadow:0 0 8px rgba(255,77,122,.8) }
+#syncIndicator[data-state="unlinked"] .sync-label{ color:#ff9ab7 }
 #status-banner.status-online{ background:rgba(0,200,110,.25) }
 #status-banner.status-offline{ background:rgba(230,0,0,.25) }
 #status-banner.status-fallback{ background:rgba(255,180,0,.25) }
+
+.status-inspector-toggle{ background:transparent; color:inherit; border:1px solid rgba(255,255,255,.2); border-radius:999px; padding:.3rem .7rem; cursor:pointer; font-weight:700; display:flex; align-items:center; gap:.35rem }
+.status-inspector-toggle:focus-visible{ outline:3px solid var(--outline-strong); outline-offset:2px }
+.status-inspector{ background:var(--surface-soft); color:var(--body-text); border-top:1px solid rgba(255,255,255,.1); padding:.6rem .9rem; display:grid; gap:.5rem; font-size:.83rem }
+.status-inspector .meta-grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:.45rem .75rem }
+.status-inspector .meta-line{ display:flex; gap:.45rem; align-items:center }
+.status-inspector .meta-label{ font-weight:700; text-transform:uppercase; letter-spacing:.03em; font-size:.75rem; opacity:.8 }
+.status-inspector .meta-value{ word-break:break-all }
+.status-inspector .meta-pill{ display:inline-flex; align-items:center; gap:.35rem; padding:.25rem .55rem; background:var(--control-bg); border-radius:999px; border:1px solid rgba(255,255,255,.16) }
+.status-inspector .pill-dot{ width:9px; height:9px; border-radius:50%; background:#20ffb4; box-shadow:0 0 8px rgba(32,255,180,.8) }
+.status-inspector .pill-dot.warn{ background:#ffb347; box-shadow:0 0 8px rgba(255,179,71,.8) }
+.status-inspector .pill-dot.bad{ background:#ff4d7a; box-shadow:0 0 8px rgba(255,77,122,.8) }
+.status-inspector .note{ margin:0; color:rgba(255,255,255,.8) }
 
 #chat-log{ flex:1; overflow:auto; padding:1rem; background:var(--surface-alt); color:var(--bot-text); font-size:.95rem }
 .chat-msg{ margin:.5rem 0; max-width:90%; line-height:1.35; word-wrap:break-word }
@@ -67,21 +103,18 @@ body{
 .bot{ margin-right:auto; background:var(--bot-bg); color:var(--bot-text); padding:.5rem .7rem; border-radius:16px 16px 16px 0 }
 
 #chatbot-form-container{ background:var(--surface-soft); border-top:1px solid rgba(255,255,255,.12); padding:.65rem .9rem calc(.65rem + env(safe-area-inset-bottom)) }
+#chatbot-form-container .inline-popover{ background:var(--surface); border:2px solid var(--clr-primary); border-radius:14px; padding:.85rem; margin-bottom:.65rem; box-shadow:0 12px 30px rgba(5,1,17,.35) }
+.inline-popover h3{ margin-top:0 }
+.inline-popover .popover-footer{ display:flex; justify-content:flex-end }
 #chatbot-input-row{ display:flex; gap:.6rem; align-items:stretch }
 #chatbot-input{ flex:1; background:var(--control-bg); border:none; border-radius:12px; color:var(--bot-text); font-size:.95rem; padding:.6rem .75rem }
 #chatbot-send{ display:flex; align-items:center; justify-content:center; gap:6px; background:var(--clr-accent); border:none; color:#fff; font-weight:600; padding:.55rem .95rem; border-radius:12px; cursor:pointer; box-shadow:0 6px 16px rgba(255,59,219,.35) }
-.fab{ position:fixed; right:18px; width:54px; height:54px; border-radius:50%; border:none; color:#0b0b0b; font-weight:700; box-shadow:0 12px 28px rgba(5,1,17,.28); cursor:pointer; background:linear-gradient(135deg,var(--clr-primary),var(--clr-accent)); z-index:20; display:flex; align-items:center; justify-content:center; gap:6px; transition:transform .25s ease, box-shadow .25s ease }
-.fab:hover{ transform:translateY(-2px); box-shadow:0 14px 30px rgba(5,1,17,.35) }
-.theme-fab{ bottom:86px; }
-.support-fab{ bottom:22px; background:var(--surface); color:var(--body-text); border:2px solid var(--clr-accent); font-size:1.1rem }
-.fab-label{ font-size:.65rem; font-weight:600 }
 .fab:focus-visible,.ctrl-btn:focus-visible,#chatbot-input:focus-visible,#chatbot-send:focus-visible{ outline:3px solid var(--outline-strong); outline-offset:3px }
-  .modal-overlay{ position:fixed; inset:0; background:rgba(0,0,0,.55); backdrop-filter:blur(4px); display:flex; align-items:center; justify-content:center; z-index:30; padding:16px }
-  .modal{ background:var(--surface); border:2px solid var(--clr-primary); border-radius:16px; max-width:620px; width:100%; box-shadow:0 20px 40px rgba(5,1,17,.4); color:var(--body-text); }
-  .modal-header{ display:flex; align-items:center; justify-content:space-between; padding:1rem 1.15rem; border-bottom:1px solid rgba(255,255,255,.1) }
-  .modal-body{ padding:1rem 1.15rem; display:grid; gap:1rem }
-  .modal-close{ background:transparent; border:none; color:inherit; cursor:pointer; font-size:1rem; display:flex; align-items:center; gap:.35rem }
-  .modal h3{ margin:0; font-size:1.05rem }
+  .inline-popover .modal{ border:none; box-shadow:none }
+  .modal-header{ display:flex; align-items:center; justify-content:space-between; margin-bottom:.65rem }
+  .modal-body{ display:grid; gap:.5rem }
+  .modal-close{ background:transparent; border:none; color:inherit; cursor:pointer; font-size:.95rem; display:flex; align-items:center; gap:.35rem }
+  .modal h3{ margin:0; font-size:1rem }
   .support-list{ list-style:none; padding:0; margin:.5rem 0; display:grid; gap:.5rem }
   .support-list button{ width:100%; text-align:left; border:1px solid rgba(255,255,255,.12); padding:.75rem .85rem; border-radius:10px; background:var(--control-bg); color:var(--body-text); cursor:pointer }
   .visually-hidden{position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
@@ -104,50 +137,62 @@ body{
 <body>
 
 <div id="chatbot-container" role="dialog" aria-modal="true">
-  <div id="chatbot-header">
-    <h1 id="titleEl">Chattia</h1>
-    <div class="header-actions">
-      <button id="voiceCtrl" class="ctrl-btn" type="button" aria-pressed="false" aria-label="Toggle voice input">Voice</button>
-      <button id="langCtrl" class="ctrl-btn" type="button" aria-pressed="false" aria-label="Switch language">ES</button>
-      <button id="themeCtrl" class="ctrl-btn" type="button" aria-pressed="false" aria-label="Toggle theme">Dark</button>
+<div id="chatbot-header">
+  <h1 id="titleEl">Chattia</h1>
+</div>
+<div id="status-banner" class="status-online">
+  <div class="status-content">
+    <span id="statusText">Secure link active</span>
+    <div id="syncIndicator" class="sync-indicator" data-state="unlinked" role="status" aria-live="polite" aria-label="Worker sync unavailable">
+      <span class="sync-dot" aria-hidden="true"></span>
+      <span id="syncLabel" class="sync-label">[SYNC]</span>
+    </div>
+    <button id="statusInspectorToggle" class="status-inspector-toggle" type="button" aria-expanded="false" aria-controls="statusInspector">
+      <i class="fa fa-circle-info" aria-hidden="true"></i>
+      Status details
+    </button>
+  </div>
+</div>
+<div id="statusInspector" class="status-inspector hidden" aria-live="polite">
+  <div class="meta-grid">
+    <div class="meta-line"><span class="meta-label">Worker</span><span id="metaWorker" class="meta-value">—</span></div>
+    <div class="meta-line"><span class="meta-label">Last check</span><span id="metaLastCheck" class="meta-value">—</span></div>
+    <div class="meta-line"><span class="meta-label">Signature TTL</span><span id="metaTtl" class="meta-value meta-pill"><span class="pill-dot" aria-hidden="true"></span><span id="metaTtlLabel">—</span></span></div>
+    <div class="meta-line"><span class="meta-label">Current mode</span><span id="metaMode" class="meta-value meta-pill"><span class="pill-dot" aria-hidden="true"></span><span id="metaModeLabel">Online</span></span></div>
+  </div>
+  <p id="metaNote" class="note">Watching for gateway health…</p>
+</div>
+  <div id="chat-log" aria-live="polite"></div>
+<div id="chatbot-form-container">
+  <div id="resetPopover" class="inline-popover hidden" role="dialog" aria-modal="false" aria-labelledby="supportTitle">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="supportTitle">Reset or feedback</h3>
+        <button id="supportClose" class="modal-close" type="button" aria-label="Close reset options"><i class="fa fa-times"></i> Close</button>
+      </div>
+      <div class="modal-body">
+        <p>Keep the modal open while you decide—no accidental closes on outside clicks.</p>
+        <ul class="support-list">
+          <li><button type="button" id="resetThread"><i class="fa fa-rotate"></i> Reset conversation & memory</button></li>
+          <li><button type="button" id="submitFeedback"><i class="fa fa-comment-dots"></i> Leave quick feedback</button></li>
+        </ul>
+      </div>
     </div>
   </div>
-  <div id="status-banner" class="status-online"><span id="statusText">Secure link active</span></div>
-  <div id="chat-log" aria-live="polite"></div>
-  <div id="chatbot-form-container">
-    <form id="chatbot-input-row" autocomplete="off">
-      <div id="turnstile-slot" class="turnstile-slot" aria-hidden="true"></div>
+  <div class="control-dock" role="group" aria-label="Conversation controls">
+    <button id="resetCtrl" class="dock-btn" type="button" aria-haspopup="dialog" aria-expanded="false">Reset</button>
+    <button id="voiceCtrl" class="dock-btn" type="button" aria-pressed="false" aria-label="Toggle voice input">Voice</button>
+    <button id="langCtrl" class="dock-btn" type="button" aria-pressed="false" aria-label="Switch language">ES</button>
+    <button id="themeCtrl" class="dock-btn" type="button" aria-pressed="false" aria-label="Toggle theme">Dark</button>
+  </div>
+  <form id="chatbot-input-row" autocomplete="off">
+    <div id="turnstile-slot" class="turnstile-slot" aria-hidden="true"></div>
       <input id="turnstile-token" type="hidden" name="cf-turnstile-response" value="" data-require="false">
       <label class="visually-hidden" for="chatbot-company">Company</label>
       <input id="chatbot-company" type="text" name="company" autocomplete="off" aria-hidden="true" tabindex="-1" style="position:absolute;left:-9999px">
       <input id="chatbot-input" type="text" placeholder="Type your message… [Enter]" maxlength="256">
       <button id="chatbot-send" type="submit" aria-label="Send"><i class="fa fa-arrow-right"></i></button>
     </form>
-  </div>
-</div>
-
-<button id="themeFab" class="fab theme-fab hidden" type="button" aria-live="polite" aria-pressed="false">
-  <i class="fa fa-circle-half-stroke"></i>
-  <span class="fab-label" id="themeFabLabel">Light</span>
-</button>
-
-<button id="supportFab" class="fab support-fab" type="button" aria-haspopup="dialog" aria-expanded="false" aria-label="Open support and reset">
-  <i class="fa fa-question"></i>
-</button>
-
-<div id="supportOverlay" class="modal-overlay hidden" role="presentation">
-  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="supportTitle">
-    <div class="modal-header">
-      <h3 id="supportTitle">Reset or feedback</h3>
-      <button id="supportClose" class="modal-close" type="button" aria-label="Close support options"><i class="fa fa-times"></i> Close</button>
-    </div>
-    <div class="modal-body">
-      <p>Keep the modal open while you decide—no accidental closes on outside clicks.</p>
-      <ul class="support-list">
-        <li><button type="button" id="resetThread"><i class="fa fa-rotate"></i> Reset conversation & memory</button></li>
-        <li><button type="button" id="submitFeedback"><i class="fa fa-comment-dots"></i> Leave quick feedback</button></li>
-      </ul>
-    </div>
   </div>
 </div>
 
@@ -206,25 +251,34 @@ const langCtrl = document.getElementById('langCtrl');
 const themeCtrl = document.getElementById('themeCtrl');
 const statusBanner = document.getElementById('status-banner');
 const statusText = document.getElementById('statusText');
+const syncIndicator = document.getElementById('syncIndicator');
+const syncLabel = document.getElementById('syncLabel');
+const statusInspectorToggle = document.getElementById('statusInspectorToggle');
+const statusInspector = document.getElementById('statusInspector');
+const metaWorker = document.getElementById('metaWorker');
+const metaLastCheck = document.getElementById('metaLastCheck');
+const metaTtl = document.getElementById('metaTtl');
+const metaTtlLabel = document.getElementById('metaTtlLabel');
+const metaMode = document.getElementById('metaMode');
+const metaModeLabel = document.getElementById('metaModeLabel');
+const metaNote = document.getElementById('metaNote');
 const logEl  = document.querySelector('#chat-log');
 const form   = document.querySelector('#chatbot-input-row');
 const input  = document.querySelector('#chatbot-input');
 const send   = document.querySelector('#chatbot-send');
 const honeyp = document.querySelector('#chatbot-company');
 const tTok   = document.querySelector('#turnstile-token');
-const themeFab = document.getElementById('themeFab');
-const themeFabLabel = document.getElementById('themeFabLabel');
-const supportFab = document.getElementById('supportFab');
-const supportOverlay = document.getElementById('supportOverlay');
+const supportCtrl = document.getElementById('resetCtrl');
+const supportOverlay = document.getElementById('resetPopover');
 const supportClose = document.getElementById('supportClose');
 const resetThreadBtn = document.getElementById('resetThread');
 const submitFeedbackBtn = document.getElementById('submitFeedback');
 
 const state = { conversation:[], isSending:false };
-const integrityState = { timer:null, focusBound:false, summary:null, apiDegradedUntil:0 };
+const integrityState = { timer:null, focusBound:false, summary:null, apiDegradedUntil:0, lastChecked:null, lastError:null, lastTtl:null };
 const storage = (()=>{ try{return window.localStorage;}catch{return null;} })();
 const securityState = { lastSweep:null };
-const speechState = { recognition:null, listening:false, speakEnabled:false, supported:false, langCode:'en-US', allowTts:false };
+const speechState = { recognition:null, listening:false, speakEnabled:false, supported:false, langCode:'en-US', allowTts:false, warnedUnsupported:false };
 
 const { create } = window.zustand || {};
 const defaultThemes = Object.freeze({
@@ -275,12 +329,21 @@ function setLocale(locale){
   titleEl.textContent = L.title;
   input.placeholder = L.input;
   send.setAttribute('aria-label', L.sendLabel);
-  langCtrl.textContent = locale==='es'?'EN':'ES';
+  updateLangCtrl(locale);
   refreshStatusBanner();
   setSpeechLocale(locale);
   try{ localStorage.setItem('chattia:locale', locale); }catch{}
 }
 function cycleLocale(){ setLocale(currentLang()==='en'?'es':'en'); }
+
+function updateLangCtrl(locale){
+  if(!langCtrl) return;
+  const isEs = locale === 'es';
+  langCtrl.textContent = isEs ? 'EN' : 'ES';
+  langCtrl.setAttribute('aria-pressed', isEs ? 'true' : 'false');
+  langCtrl.classList.toggle('active', isEs);
+  langCtrl.setAttribute('aria-label', isEs ? 'Idioma actual español. Cambiar a inglés' : 'Current language English. Switch to Spanish');
+}
 
 /* ---------- Theme ---------- */
 const THEME_KEY = 'chattia-theme';
@@ -294,16 +357,8 @@ function applyThemeTokens(theme){
   Object.entries(tokens).forEach(([k,v])=> root.style.setProperty(`--${k}`, v));
   document.body.dataset.theme = theme;
   document.body.classList.add('with-transition');
-  updateThemeFab(theme);
   updateThemeCtrl(theme);
   try{ localStorage.setItem(THEME_KEY, theme); }catch{}
-}
-
-function updateThemeFab(theme){
-  if(!themeFab || !themeFabLabel) return;
-  const label = theme==='high-contrast' ? 'High contrast' : (theme==='dark'?'Dark':'Light');
-  themeFabLabel.textContent = label;
-  themeFab.setAttribute('aria-pressed', theme==='dark');
 }
 
 function updateThemeCtrl(theme){
@@ -311,6 +366,7 @@ function updateThemeCtrl(theme){
   const label = theme==='high-contrast' ? 'High contrast' : (theme==='dark' ? 'Dark' : 'Light');
   themeCtrl.textContent = label.toUpperCase();
   themeCtrl.setAttribute('aria-pressed', theme==='dark' || theme==='high-contrast');
+  themeCtrl.classList.toggle('active', theme!=='light');
   themeCtrl.setAttribute('aria-label', `Current theme: ${label}. Click to change`);
 }
 
@@ -344,7 +400,6 @@ function initTheme(){
   applyThemeTokens(initial);
 }
 
-themeFab?.addEventListener('click', cycleTheme);
 themeCtrl?.addEventListener('click', cycleTheme);
 fetchThemeConfig().finally(initTheme);
 
@@ -354,8 +409,87 @@ function getSummaryTtl(summary){
   return Number.isFinite(ttlRaw) ? ttlRaw : null;
 }
 function isApiDegraded(){ return Date.now() < (integrityState.apiDegradedUntil || 0); }
-function markApiDegraded(ms=API_DEGRADE_MEMORY_MS){ integrityState.apiDegradedUntil = Date.now() + Math.max(0, ms); }
-function clearApiDegraded(){ integrityState.apiDegradedUntil = 0; }
+function markApiDegraded(ms=API_DEGRADE_MEMORY_MS){
+  integrityState.apiDegradedUntil = Date.now() + Math.max(0, ms);
+  integrityState.lastError = 'Primary API unreachable';
+  updateSyncIndicator();
+  updateStatusInspector(integrityState.lastError);
+}
+function clearApiDegraded(){
+  integrityState.apiDegradedUntil = 0;
+  updateSyncIndicator();
+  updateStatusInspector();
+}
+
+function hasLiveWorkerLink(){
+  if(!navigator.onLine) return false;
+  if(isApiDegraded()) return false;
+  return Boolean(integrityState.summary);
+}
+
+function updateSyncIndicator(){
+  if(!syncIndicator || !syncLabel) return;
+  const linked = hasLiveWorkerLink();
+  syncIndicator.dataset.state = linked ? 'linked' : 'unlinked';
+  syncIndicator.setAttribute('aria-label', linked ? 'Worker sync established' : 'Worker sync unavailable');
+  syncLabel.textContent = linked ? '[SYNC]' : '[SYNC?]';
+}
+
+function currentStatusMode(){
+  if(!navigator.onLine) return 'offline';
+  if(isApiDegraded()) return 'fallback';
+  return 'online';
+}
+
+function formatRelative(ts){
+  if(!ts) return '—';
+  const diff = Date.now() - ts;
+  const mins = Math.floor(diff/60000);
+  if(mins < 1) return 'just now';
+  if(mins === 1) return '1 minute ago';
+  if(mins < 60) return `${mins} minutes ago`;
+  const hrs = Math.floor(mins/60);
+  if(hrs === 1) return '1 hour ago';
+  return `${hrs} hours ago`;
+}
+
+function setPillState(el, labelEl, mode){
+  if(!el || !labelEl) return;
+  const dot = el.querySelector('.pill-dot');
+  el.classList.remove('warn','bad');
+  dot?.classList.remove('warn','bad');
+  if(mode === 'warn'){ dot?.classList.add('warn'); }
+  if(mode === 'bad'){ dot?.classList.add('bad'); }
+  labelEl.textContent = labelEl.textContent || '';
+}
+
+function updateStatusInspector(note=''){ 
+  if(metaWorker) metaWorker.textContent = (()=>{ try{return new URL(INTEGRITY_GATEWAY).host;}catch{return INTEGRITY_GATEWAY;}})();
+  if(metaLastCheck) metaLastCheck.textContent = integrityState.lastChecked ? formatRelative(integrityState.lastChecked) : 'Not checked yet';
+  if(metaTtl && metaTtlLabel){
+    const ttl = integrityState.lastTtl;
+    metaTtlLabel.textContent = Number.isFinite(ttl) ? `${ttl}s` : '—';
+    const mode = !navigator.onLine ? 'bad' : (ttl && ttl <= 15 ? 'warn' : '');
+    setPillState(metaTtl, metaTtlLabel, mode);
+  }
+  if(metaMode && metaModeLabel){
+    const mode = currentStatusMode();
+    metaModeLabel.textContent = mode === 'fallback' ? 'Local safeguard' : (mode === 'offline' ? 'Offline' : 'Online');
+    const variant = mode === 'online' ? '' : (mode === 'fallback' ? 'warn' : 'bad');
+    setPillState(metaMode, metaModeLabel, variant);
+  }
+  if(metaNote){
+    metaNote.textContent = note || (integrityState.lastError || 'Watching for gateway health…');
+  }
+}
+
+statusInspectorToggle?.addEventListener('click', ()=>{
+  if(!statusInspector) return;
+  const isHidden = statusInspector.classList.contains('hidden');
+  statusInspector.classList.toggle('hidden');
+  statusInspectorToggle.setAttribute('aria-expanded', String(isHidden));
+  updateStatusInspector();
+});
 
 function formatStatusNote(locale, key, vars={}){
   if(!key) return '';
@@ -374,6 +508,8 @@ function refreshStatusBanner(noteKey=null, vars=null){
   const label = statusCfg[mode] || statusCfg.online;
   const note = noteKey ? formatStatusNote(locale, noteKey, vars||{}) : '';
   statusText.textContent = note ? `${label} — ${note}` : label;
+  updateSyncIndicator();
+  updateStatusInspector(note);
 }
 async function pollIntegritySummary(){
   if(!navigator.onLine){ refreshStatusBanner('offlineQueue'); return null; }
@@ -382,13 +518,17 @@ async function pollIntegritySummary(){
     if(!res.ok) throw new Error('integrity_health_error:'+res.status);
     const data = await res.json();
     integrityState.summary = data;
+    integrityState.lastChecked = Date.now();
+    integrityState.lastError = null;
+    integrityState.lastTtl = getSummaryTtl(data);
     if(!isApiDegraded()){
-      const ttl = getSummaryTtl(data);
+      const ttl = integrityState.lastTtl;
       refreshStatusBanner('gatewayReady', { ttl: Number.isFinite(ttl) ? ttl : 'N/A' });
     }
     return data;
   }catch{
     integrityState.summary = null;
+    integrityState.lastError = 'Integrity gateway unreachable';
     if(!isApiDegraded()) refreshStatusBanner('gatewayDegraded');
     return null;
   }
@@ -403,6 +543,14 @@ function startIntegrityMonitor(){
     integrityState.focusBound = true;
   }
 }
+
+window.addEventListener('online', ()=>{
+  pollIntegritySummary();
+  refreshStatusBanner();
+});
+window.addEventListener('offline', ()=>{
+  refreshStatusBanner('offlineQueue');
+});
 
 /* ---------- Memory ---------- */
 const MEMORY_KEY = 'chattia.memory.v1';
@@ -431,13 +579,13 @@ function updateSend(){
 /* ---------- Support overlay ---------- */
 function openSupport(){
   supportOverlay?.classList.remove('hidden');
-  supportFab?.setAttribute('aria-expanded','true');
+  supportCtrl?.setAttribute('aria-expanded','true');
   useUiStore.getState().setSupportOpen?.(true);
 }
 
 function closeSupport(){
   supportOverlay?.classList.add('hidden');
-  supportFab?.setAttribute('aria-expanded','false');
+  supportCtrl?.setAttribute('aria-expanded','false');
   useUiStore.getState().setSupportOpen?.(false);
 }
 
@@ -456,7 +604,10 @@ function submitFeedback(){
   recordMessage('assistant', note, { source:'feedback' });
 }
 
-supportFab?.addEventListener('click', openSupport);
+supportCtrl?.addEventListener('click', ()=>{
+  if(supportOverlay?.classList.contains('hidden')) openSupport();
+  else closeSupport();
+});
 supportClose?.addEventListener('click', closeSupport);
 resetThreadBtn?.addEventListener('click', ()=>{ resetConversation(); closeSupport(); });
 submitFeedbackBtn?.addEventListener('click', ()=>{ submitFeedback(); closeSupport(); });
@@ -472,12 +623,14 @@ function updateVoiceUi(){
     voiceCtrl.disabled = true;
     voiceCtrl.setAttribute('aria-pressed','false');
     voiceCtrl.title = 'Speech recognition not supported in this browser';
+    voiceCtrl.classList.remove('active');
     return;
   }
   voiceCtrl.disabled = false;
   voiceCtrl.textContent = speechState.listening ? 'Stop' : 'Voice';
   voiceCtrl.setAttribute('aria-pressed', speechState.listening ? 'true' : 'false');
   voiceCtrl.title = speechState.listening ? 'Listening… click to stop' : 'Click to start voice capture';
+  voiceCtrl.classList.toggle('active', speechState.listening);
 }
 
 function setSpeechLocale(locale){
@@ -519,7 +672,13 @@ function setupSpeech(){
 }
 
 function toggleVoice(){
-  if(!speechState.recognition) return;
+  if(!speechState.recognition){
+    if(!speechState.supported && !speechState.warnedUnsupported){
+      addMsg('Voice capture is not available in this browser.', 'bot');
+      speechState.warnedUnsupported = true;
+    }
+    return;
+  }
   if(speechState.listening){
     try{ speechState.recognition.stop(); }catch{}
   } else {
