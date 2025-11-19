@@ -51,7 +51,6 @@ body{
 #chatbot-header{ display:flex; align-items:center; gap:.5rem; justify-content:flex-start;
   padding:.7rem .9rem; background:linear-gradient(135deg,var(--clr-primary),var(--clr-accent)); color:#fff }
 #chatbot-header h1{ margin:0; font-size:1.05rem }
-
 .control-dock{ display:flex; flex-wrap:wrap; gap:.45rem; margin-bottom:.6rem }
 .dock-btn{
   background:var(--control-bg);
@@ -64,15 +63,10 @@ body{
   cursor:pointer;
   text-transform:uppercase;
 }
-.dock-btn.active{
-  border-color:var(--clr-primary);
-  box-shadow:0 0 0 2px rgba(0,196,255,.2);
-}
 .dock-btn:focus-visible{ outline:3px solid var(--outline-strong); outline-offset:2px }
 .dock-btn[disabled]{ opacity:.65; cursor:not-allowed }
-
 #status-banner{ background:var(--surface-soft); color:#fff; padding:.45rem .9rem; font-size:.85rem }
-#status-banner .status-content{ display:flex; align-items:center; justify-content:space-between; gap:.75rem; flex-wrap:wrap }
+#status-banner .status-content{ display:flex; align-items:center; justify-content:space-between; gap:.75rem }
 #status-banner .status-content span{ flex:1 }
 .sync-indicator{ display:flex; align-items:center; gap:.35rem; font-size:.75rem; font-weight:700; letter-spacing:.08em }
 .sync-dot{ width:10px; height:10px; border-radius:50%; box-shadow:0 0 8px rgba(255,255,255,.4); background:#ff3bdb }
@@ -83,7 +77,6 @@ body{
 #status-banner.status-online{ background:rgba(0,200,110,.25) }
 #status-banner.status-offline{ background:rgba(230,0,0,.25) }
 #status-banner.status-fallback{ background:rgba(255,180,0,.25) }
-
 .status-inspector-toggle{ background:transparent; color:inherit; border:1px solid rgba(255,255,255,.2); border-radius:999px; padding:.3rem .7rem; cursor:pointer; font-weight:700; display:flex; align-items:center; gap:.35rem }
 .status-inspector-toggle:focus-visible{ outline:3px solid var(--outline-strong); outline-offset:2px }
 .status-inspector{ background:var(--surface-soft); color:var(--body-text); border-top:1px solid rgba(255,255,255,.1); padding:.6rem .9rem; display:grid; gap:.5rem; font-size:.83rem }
@@ -96,12 +89,10 @@ body{
 .status-inspector .pill-dot.warn{ background:#ffb347; box-shadow:0 0 8px rgba(255,179,71,.8) }
 .status-inspector .pill-dot.bad{ background:#ff4d7a; box-shadow:0 0 8px rgba(255,77,122,.8) }
 .status-inspector .note{ margin:0; color:rgba(255,255,255,.8) }
-
 #chat-log{ flex:1; overflow:auto; padding:1rem; background:var(--surface-alt); color:var(--bot-text); font-size:.95rem }
 .chat-msg{ margin:.5rem 0; max-width:90%; line-height:1.35; word-wrap:break-word }
 .user{ margin-left:auto; background:var(--clr-primary); color:var(--user-text); padding:.5rem .7rem; border-radius:16px 16px 0 16px }
 .bot{ margin-right:auto; background:var(--bot-bg); color:var(--bot-text); padding:.5rem .7rem; border-radius:16px 16px 16px 0 }
-
 #chatbot-form-container{ background:var(--surface-soft); border-top:1px solid rgba(255,255,255,.12); padding:.65rem .9rem calc(.65rem + env(safe-area-inset-bottom)) }
 #chatbot-form-container .inline-popover{ background:var(--surface); border:2px solid var(--clr-primary); border-radius:14px; padding:.85rem; margin-bottom:.65rem; box-shadow:0 12px 30px rgba(5,1,17,.35) }
 .inline-popover h3{ margin-top:0 }
@@ -153,15 +144,6 @@ body{
     </button>
   </div>
 </div>
-<div id="statusInspector" class="status-inspector hidden" aria-live="polite">
-  <div class="meta-grid">
-    <div class="meta-line"><span class="meta-label">Worker</span><span id="metaWorker" class="meta-value">—</span></div>
-    <div class="meta-line"><span class="meta-label">Last check</span><span id="metaLastCheck" class="meta-value">—</span></div>
-    <div class="meta-line"><span class="meta-label">Signature TTL</span><span id="metaTtl" class="meta-value meta-pill"><span class="pill-dot" aria-hidden="true"></span><span id="metaTtlLabel">—</span></span></div>
-    <div class="meta-line"><span class="meta-label">Current mode</span><span id="metaMode" class="meta-value meta-pill"><span class="pill-dot" aria-hidden="true"></span><span id="metaModeLabel">Online</span></span></div>
-  </div>
-  <p id="metaNote" class="note">Watching for gateway health…</p>
-</div>
   <div id="chat-log" aria-live="polite"></div>
 <div id="chatbot-form-container">
   <div id="resetPopover" class="inline-popover hidden" role="dialog" aria-modal="false" aria-labelledby="supportTitle">
@@ -196,6 +178,11 @@ body{
   </div>
 </div>
 
+<button id="themeFab" class="fab theme-fab hidden" type="button" aria-live="polite" aria-pressed="false">
+  <i class="fa fa-circle-half-stroke"></i>
+  <span class="fab-label" id="themeFabLabel">Light</span>
+</button>
+
 <script src="https://unpkg.com/zustand/umd/zustand.development.js"></script>
 <script src="services/fallback_kb.js"></script>
 <script>
@@ -223,13 +210,11 @@ function randomHex(bytes = 16){
   return fallback;
 }
 const SESSION_NONCE = randomHex(16);
-
 const API_BASE = INTEGRITY_GATEWAY;           // single Worker handles auth+chat+stt
 const CHAT_PATH = '/api/chat';
 const STT_PATH  = '/api/stt';
 const AUTH_URL  = `${API_BASE}/auth/issue`;
 const ESCALATION_URL = `${API_BASE}/fallback/escalate`;
-
 const STATUS_POLL_INTERVAL_MS = 30000;
 const API_DEGRADE_MEMORY_MS = 90000;
 const CONFIDENCE_THRESHOLD = 'low'; // escalate when server marks "low"
@@ -253,33 +238,24 @@ const statusBanner = document.getElementById('status-banner');
 const statusText = document.getElementById('statusText');
 const syncIndicator = document.getElementById('syncIndicator');
 const syncLabel = document.getElementById('syncLabel');
-const statusInspectorToggle = document.getElementById('statusInspectorToggle');
-const statusInspector = document.getElementById('statusInspector');
-const metaWorker = document.getElementById('metaWorker');
-const metaLastCheck = document.getElementById('metaLastCheck');
-const metaTtl = document.getElementById('metaTtl');
-const metaTtlLabel = document.getElementById('metaTtlLabel');
-const metaMode = document.getElementById('metaMode');
-const metaModeLabel = document.getElementById('metaModeLabel');
-const metaNote = document.getElementById('metaNote');
 const logEl  = document.querySelector('#chat-log');
 const form   = document.querySelector('#chatbot-input-row');
 const input  = document.querySelector('#chatbot-input');
 const send   = document.querySelector('#chatbot-send');
 const honeyp = document.querySelector('#chatbot-company');
 const tTok   = document.querySelector('#turnstile-token');
+const themeFab = document.getElementById('themeFab');
+const themeFabLabel = document.getElementById('themeFabLabel');
 const supportCtrl = document.getElementById('resetCtrl');
 const supportOverlay = document.getElementById('resetPopover');
 const supportClose = document.getElementById('supportClose');
 const resetThreadBtn = document.getElementById('resetThread');
 const submitFeedbackBtn = document.getElementById('submitFeedback');
-
 const state = { conversation:[], isSending:false };
 const integrityState = { timer:null, focusBound:false, summary:null, apiDegradedUntil:0, lastChecked:null, lastError:null, lastTtl:null };
 const storage = (()=>{ try{return window.localStorage;}catch{return null;} })();
 const securityState = { lastSweep:null };
 const speechState = { recognition:null, listening:false, speakEnabled:false, supported:false, langCode:'en-US', allowTts:false, warnedUnsupported:false };
-
 const { create } = window.zustand || {};
 const defaultThemes = Object.freeze({
   dark:{ tokens:{
@@ -411,14 +387,11 @@ function getSummaryTtl(summary){
 function isApiDegraded(){ return Date.now() < (integrityState.apiDegradedUntil || 0); }
 function markApiDegraded(ms=API_DEGRADE_MEMORY_MS){
   integrityState.apiDegradedUntil = Date.now() + Math.max(0, ms);
-  integrityState.lastError = 'Primary API unreachable';
   updateSyncIndicator();
-  updateStatusInspector(integrityState.lastError);
 }
 function clearApiDegraded(){
   integrityState.apiDegradedUntil = 0;
   updateSyncIndicator();
-  updateStatusInspector();
 }
 
 function hasLiveWorkerLink(){
@@ -434,62 +407,6 @@ function updateSyncIndicator(){
   syncIndicator.setAttribute('aria-label', linked ? 'Worker sync established' : 'Worker sync unavailable');
   syncLabel.textContent = linked ? '[SYNC]' : '[SYNC?]';
 }
-
-function currentStatusMode(){
-  if(!navigator.onLine) return 'offline';
-  if(isApiDegraded()) return 'fallback';
-  return 'online';
-}
-
-function formatRelative(ts){
-  if(!ts) return '—';
-  const diff = Date.now() - ts;
-  const mins = Math.floor(diff/60000);
-  if(mins < 1) return 'just now';
-  if(mins === 1) return '1 minute ago';
-  if(mins < 60) return `${mins} minutes ago`;
-  const hrs = Math.floor(mins/60);
-  if(hrs === 1) return '1 hour ago';
-  return `${hrs} hours ago`;
-}
-
-function setPillState(el, labelEl, mode){
-  if(!el || !labelEl) return;
-  const dot = el.querySelector('.pill-dot');
-  el.classList.remove('warn','bad');
-  dot?.classList.remove('warn','bad');
-  if(mode === 'warn'){ dot?.classList.add('warn'); }
-  if(mode === 'bad'){ dot?.classList.add('bad'); }
-  labelEl.textContent = labelEl.textContent || '';
-}
-
-function updateStatusInspector(note=''){ 
-  if(metaWorker) metaWorker.textContent = (()=>{ try{return new URL(INTEGRITY_GATEWAY).host;}catch{return INTEGRITY_GATEWAY;}})();
-  if(metaLastCheck) metaLastCheck.textContent = integrityState.lastChecked ? formatRelative(integrityState.lastChecked) : 'Not checked yet';
-  if(metaTtl && metaTtlLabel){
-    const ttl = integrityState.lastTtl;
-    metaTtlLabel.textContent = Number.isFinite(ttl) ? `${ttl}s` : '—';
-    const mode = !navigator.onLine ? 'bad' : (ttl && ttl <= 15 ? 'warn' : '');
-    setPillState(metaTtl, metaTtlLabel, mode);
-  }
-  if(metaMode && metaModeLabel){
-    const mode = currentStatusMode();
-    metaModeLabel.textContent = mode === 'fallback' ? 'Local safeguard' : (mode === 'offline' ? 'Offline' : 'Online');
-    const variant = mode === 'online' ? '' : (mode === 'fallback' ? 'warn' : 'bad');
-    setPillState(metaMode, metaModeLabel, variant);
-  }
-  if(metaNote){
-    metaNote.textContent = note || (integrityState.lastError || 'Watching for gateway health…');
-  }
-}
-
-statusInspectorToggle?.addEventListener('click', ()=>{
-  if(!statusInspector) return;
-  const isHidden = statusInspector.classList.contains('hidden');
-  statusInspector.classList.toggle('hidden');
-  statusInspectorToggle.setAttribute('aria-expanded', String(isHidden));
-  updateStatusInspector();
-});
 
 function formatStatusNote(locale, key, vars={}){
   if(!key) return '';
@@ -509,7 +426,6 @@ function refreshStatusBanner(noteKey=null, vars=null){
   const note = noteKey ? formatStatusNote(locale, noteKey, vars||{}) : '';
   statusText.textContent = note ? `${label} — ${note}` : label;
   updateSyncIndicator();
-  updateStatusInspector(note);
 }
 async function pollIntegritySummary(){
   if(!navigator.onLine){ refreshStatusBanner('offlineQueue'); return null; }
