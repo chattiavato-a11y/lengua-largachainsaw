@@ -19,25 +19,25 @@ binding = "AI"
 # -------- KV namespaces --------
 [[kv_namespaces]]
 binding = "OPS_NONCE_KV"        # mint/use replay defense
-id = "<KV_ID_NONCE>"
+id = "01d6a01e13b74f939c0cd3e8b4e7f59b"
 
 [[kv_namespaces]]
 binding = "OPS_TRANSCRIPTS_KV"  # lightweight transcripts / scan reports
-id = "<KV_ID_TRANSCRIPTS>"
+id = "ecd39e37d71b43b8bc26340ad9a27697"
 
 [[kv_namespaces]]
 binding = "OPS_BANLIST_KV"      # honeypot IP blocks
-id = "<KV_ID_BANLIST>"
+id = "bf0f692b2ad540938126f26ae77aa851"
 
 # -------- R2 bucket (sanitized artifacts from scans) --------
 [[r2_buckets]]
 binding = "OPS_ARTIFACTS_R2"
-bucket_name = "ops-artifacts"   # create in dashboard; adjust if different
+bucket_name = "ops-artifacts"
 
 [[d1_databases]]
 binding = "OPS_TRAINING_DB"
 database_name = "ops_training_db"
-database_id = "<D1_ID_TRAINING>"
+database_id = "f959249d-fa40-48d9-a832-ff375b56e529"
 
 # -------- Non-sensitive variables (safe to keep in repo) --------
 [vars]
