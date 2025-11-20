@@ -2,345 +2,228 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <title>OPS Storage Debug</title>
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
-  <title>Storage Diagnostics Console</title>
   <style>
-    :root {
-      color-scheme: light dark;
-      --bg: #0c0b16;
-      --panel: #15142b;
-      --text: #f6f4ff;
-      --muted: #b9b2d9;
-      --accent: #7cf2c9;
-      --warn: #ffd166;
-      --bad: #ff6b6b;
-      --border: rgba(255, 255, 255, 0.16);
-      --shadow: 0 18px 35px rgba(0,0,0,0.35);
-    }
-
     body {
-      margin: 0;
-      min-height: 100vh;
-      font-family: "Inter", system-ui, -apple-system, sans-serif;
-      background: radial-gradient(circle at 15% 20%, rgba(124,242,201,0.08), transparent 35%),
-                  radial-gradient(circle at 80% 10%, rgba(255,107,107,0.08), transparent 35%),
-                  var(--bg);
-      color: var(--text);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 1.5rem;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      margin: 1rem;
+      background: #05050a;
+      color: #f5f5ff;
     }
-
-    .shell {
-      width: min(1100px, 100%);
-      background: var(--panel);
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      box-shadow: var(--shadow);
-      padding: 1.25rem 1.5rem;
-      display: grid;
-      gap: 1rem;
+    h1 { margin-bottom: 0.25rem; }
+    small { color: #b3b3d9; }
+    label { font-weight: 600; display: block; margin-top: 0.75rem; }
+    input {
+      width: 100%;
+      max-width: 480px;
+      padding: 0.35rem 0.45rem;
+      margin-top: 0.25rem;
+      border-radius: 6px;
+      border: 1px solid #44446a;
+      background: #090912;
+      color: inherit;
     }
-
-    header {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: 0.75rem;
-      justify-content: space-between;
-    }
-
-    h1 {
-      margin: 0;
-      font-size: 1.4rem;
-      letter-spacing: 0.02em;
-    }
-
-    p { margin: 0; color: var(--muted); }
-
-    .lead { max-width: 780px; }
-
-    .controls {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0.5rem;
-      align-items: center;
-    }
-
-    label {
+    button {
+      margin-top: 0.75rem;
+      padding: 0.4rem 0.9rem;
+      border-radius: 6px;
+      border: 1px solid #66f2c9;
+      background: #101722;
+      color: #66f2c9;
       font-weight: 600;
+      cursor: pointer;
+    }
+    button:disabled {
+      opacity: 0.6;
+      cursor: default;
+    }
+    .status {
+      margin-top: 0.75rem;
+      font-weight: 700;
+    }
+    .ok { color: #66f2c9; }
+    .warn { color: #ffd166; }
+    .bad { color: #ff6b6b; }
+    .section {
+      margin-top: 1rem;
+      padding-top: 0.75rem;
+      border-top: 1px solid #2a2a45;
+    }
+    dl { margin: 0.25rem 0; }
+    dt {
+      font-weight: 600;
+      margin-top: 0.4rem;
+    }
+    dd {
+      margin: 0 0 0.15rem 0.75rem;
       font-size: 0.9rem;
     }
-
-    input[type="url"],
-    select {
-      width: min(520px, 100%);
-      padding: 0.55rem 0.65rem;
-      border-radius: 10px;
-      border: 1px solid var(--border);
-      background: rgba(255,255,255,0.04);
-      color: var(--text);
-      font-size: 0.95rem;
-    }
-
-    button {
-      background: linear-gradient(135deg, #7cf2c9, #6dd3ff);
-      border: none;
-      color: #05030e;
-      padding: 0.65rem 1rem;
-      border-radius: 12px;
-      font-weight: 800;
-      letter-spacing: 0.02em;
-      cursor: pointer;
-      transition: transform 0.12s ease, box-shadow 0.12s ease;
-      box-shadow: 0 10px 18px rgba(109, 211, 255, 0.3);
-    }
-
-    .ghost {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.35rem;
-      padding: 0.55rem 0.75rem;
-      border-radius: 10px;
-      border: 1px dashed var(--border);
-      color: var(--accent);
-      text-decoration: none;
-      font-weight: 700;
-      background: rgba(124, 242, 201, 0.06);
-    }
-
-    .ghost:focus-visible {
-      outline: 2px solid var(--accent);
-      outline-offset: 2px;
-    }
-
-    button:focus-visible {
-      outline: 3px solid #ffec99;
-      outline-offset: 3px;
-    }
-
-    button:active { transform: translateY(1px); }
-
-    .result,
-    .payload {
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 1rem;
-      background: rgba(255,255,255,0.03);
-    }
-
-    .status-chip {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.45rem;
-      padding: 0.35rem 0.75rem;
-      border-radius: 999px;
-      border: 1px solid var(--border);
-      text-transform: uppercase;
-      font-weight: 800;
-      letter-spacing: 0.05em;
-      background: rgba(255,255,255,0.05);
-    }
-
-    .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); }
-    .ok { color: var(--accent); }
-    .ok .dot { background: var(--accent); box-shadow: 0 0 12px rgba(124,242,201,0.8); }
-    .warn { color: var(--warn); }
-    .warn .dot { background: var(--warn); box-shadow: 0 0 12px rgba(255,209,102,0.8); }
-    .bad { color: var(--bad); }
-    .bad .dot { background: var(--bad); box-shadow: 0 0 12px rgba(255,107,107,0.8); }
-
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-      gap: 0.75rem;
-    }
-
-    .card {
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 0.9rem;
-      background: rgba(255,255,255,0.03);
-    }
-
-    .card h3 { margin: 0 0 0.35rem 0; }
-    .card .meta { color: var(--muted); font-size: 0.9rem; margin-bottom: 0.35rem; }
-    .card .error { color: var(--bad); font-weight: 600; }
-    .card .success { color: var(--accent); font-weight: 700; }
-
-    .diag-list {
-      display: grid;
-      gap: 0.5rem;
-      margin-top: 0.75rem;
-    }
-
-    .diag-item {
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 0.6rem 0.75rem;
-      background: rgba(255,255,255,0.02);
-      display: flex;
-      flex-direction: column;
-      gap: 0.3rem;
-    }
-
-    .diag-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 0.5rem;
-    }
-
-    code {
-      padding: 0.15rem 0.35rem;
-      border-radius: 8px;
-      background: rgba(255,255,255,0.07);
-      font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
-    }
-
     pre {
-      margin: 0;
-      white-space: pre-wrap;
-      word-break: break-word;
-      color: var(--muted);
+      background: #090912;
+      border-radius: 6px;
+      padding: 0.5rem;
+      max-height: 280px;
+      overflow: auto;
+      font-size: 0.8rem;
     }
-
-    .muted { color: var(--muted); }
-    .small { font-size: 0.9rem; }
-
-    @media (max-width: 640px) {
-      body { padding: 0.75rem; }
-      header { flex-direction: column; align-items: flex-start; }
-      input[type="url"] { width: 100%; }
-    }
+    code { font-family: "JetBrains Mono", Consolas, monospace; }
   </style>
 </head>
 <body>
-  <main class="shell" aria-live="polite">
-    <header>
-      <div>
-        <h1>Storage Diagnostics Console</h1>
-        <p class="lead">Run the worker's <code>/debug/storage</code> self-test, visualize binding health, and pinpoint failing links by fault code.</p>
-      </div>
-      <button id="runBtn" type="button" aria-label="Run storage diagnostics">Run checks</button>
-    </header>
+  <h1>OPS Storage Debug</h1>
+  <small>Calls <code>/debug/storage</code> on your Worker and tells you where it is broken.</small>
 
-    <div class="controls" role="group" aria-label="Diagnostics target">
-      <label for="endpoint">Worker base URL</label>
-      <input id="endpoint" type="url" inputmode="url" spellcheck="false" placeholder="https://your-worker.workers.dev" aria-describedby="endpointHint">
-      <p id="endpointHint" class="muted small">The tool will call <code>[base]/debug/storage</code>. Defaults to the current origin if left blank.</p>
-      <a id="rawLink" class="ghost" href="#" rel="noreferrer noopener" target="_blank">Open raw diagnostics</a>
-    </div>
+  <label for="baseUrl">
+    Worker base URL
+    <small>(no trailing slash)</small>
+  </label>
+  <input id="baseUrl" type="url" placeholder="https://withered-mouse-9aee.grabem-holdem-nuts-right.workers.dev">
 
-    <section class="result" aria-live="polite" aria-atomic="true">
-      <div id="summaryRow" class="controls" style="justify-content: space-between; align-items: center;">
-        <div id="summaryChip" class="status-chip warn"><span class="dot"></span><span class="label">Awaiting run</span></div>
-        <div id="ts" class="muted small">Last run: never</div>
-      </div>
-      <div class="grid" id="cards"></div>
-      <div class="payload">
-        <strong>Diagnostics</strong>
-        <div id="diagList" class="diag-list"></div>
-      </div>
-    </section>
-  </main>
+  <button id="runBtn" type="button">Run storage check</button>
+
+  <div id="summary" class="status"></div>
+
+  <div id="sections"></div>
+
+  <div class="section">
+    <strong>Raw JSON</strong>
+    <pre id="raw"></pre>
+  </div>
 
   <script>
+    const baseInput = document.getElementById('baseUrl');
     const runBtn = document.getElementById('runBtn');
-    const endpointInput = document.getElementById('endpoint');
-    const rawLink = document.getElementById('rawLink');
-    const summaryChip = document.getElementById('summaryChip');
-    const summaryLabel = summaryChip.querySelector('.label');
-    const tsEl = document.getElementById('ts');
-    const cardsEl = document.getElementById('cards');
-    const diagList = document.getElementById('diagList');
+    const summaryEl = document.getElementById('summary');
+    const sectionsEl = document.getElementById('sections');
+    const rawEl = document.getElementById('raw');
 
-    runBtn.addEventListener('click', runChecks);
-    endpointInput.addEventListener('input', updateRawLink);
-    updateRawLink();
+    runBtn.addEventListener('click', runCheck);
 
-    function buildUrl() {
-      const base = endpointInput.value.trim() || `${location.origin}`;
-      return `${base.replace(/\/$/, '')}/debug/storage`;
+    // Optional: default to current origin
+    if (!baseInput.value) {
+      baseInput.value = location.origin.replace(/\/$/, '');
     }
 
-    function updateRawLink() {
-      rawLink.href = buildUrl();
+    function classifySummary(code) {
+      switch (code) {
+        case 'S-OK': return { cls: 'ok', text: 'SYNC — KV, R2 and D1 all OK' };
+        case 'S-PARTIAL': return { cls: 'warn', text: 'PARTIAL — some bindings failing' };
+        case 'S-FAIL': return { cls: 'bad', text: 'FAIL — none of KV/R2/D1 working' };
+        default: return { cls: 'warn', text: 'Unknown summary' };
+      }
     }
 
-    function setChip(status, label) {
-      summaryChip.classList.remove('ok', 'warn', 'bad');
-      summaryChip.classList.add(status);
-      summaryLabel.textContent = label;
+    function formatAreaTitle(area, data) {
+      const code = data.code || 'N/A';
+      const ok = data.ok ? 'OK' : 'FAIL';
+      return `${area} (${ok}) — ${code}`;
     }
 
-    function cardTemplate(area, data) {
-      const statusClass = data.ok ? 'ok' : 'bad';
-      const heading = `${area} • ${data.code || 'N/A'}`;
-      const statusText = data.ok ? 'Healthy' : 'Issue detected';
-      const binding = data.binding ? `<div class="meta">Binding: <code>${data.binding}</code></div>` : '';
-      const extra = data.error
-        ? `<div class="error">${data.error}</div>`
-        : `<div class="success">Read/write check passed</div>`;
-      const row = data.row ? `<pre class="muted">Row: ${JSON.stringify(data.row)}</pre>` : '';
-
-      return `<article class="card ${statusClass}" aria-label="${heading}">
-        <h3>${heading}</h3>
-        <div class="meta">${statusText}</div>
-        ${binding}
-        ${extra}
-        ${row}
-      </article>`;
+    function nextStepFor(area, code) {
+      // Very small decision tree per code
+      if (area === 'KV') {
+        if (code === 'K-01') return 'Check wrangler.toml -> [[kv_namespaces]] binding = "OPS_TRANSCRIPTS_KV" and make sure the Namespace ID exists in Cloudflare.';
+        if (code === 'K-02') return 'KV reachable but value mismatch. Try deleting the namespace and re-creating it, then re-deploy.';
+      }
+      if (area === 'R2') {
+        if (code === 'R-01') return 'Check wrangler.toml -> [[r2_buckets]] binding = "OPS_ARTIFACTS_R2" and make sure the bucket "ops-artifacts" exists in Cloudflare.';
+        if (code === 'R-02') return 'R2 reachable but object mismatch. Confirm bucket name and that this Worker has R2 access in Cloudflare dashboard.';
+      }
+      if (area === 'D1') {
+        if (code === 'D-01') return 'Check wrangler.toml -> [[d1_databases]] binding = "OPS_TRAINING_DB" and ensure the D1 database exists.';
+        if (code === 'D-02') return 'D1 query failed. Check that the database is created and not deleted. You can also try a basic SELECT in the D1 UI.';
+        if (code === 'D-03') return 'D1 returned an unexpected row. Check the SQL ("SELECT 1 AS ok") and DB status in the D1 dashboard.';
+      }
+      return 'Review wrangler.toml bindings and Cloudflare dashboard for this area.';
     }
 
-    function diagTemplate(diag) {
-      return `<div class="diag-item">
-        <div class="diag-header"><strong>${diag.code}</strong><span class="muted small">${diag.area}</span></div>
-        <pre>${diag.message}</pre>
-      </div>`;
-    }
-
-    async function runChecks() {
-      updateRawLink();
+    async function runCheck() {
+      summaryEl.textContent = '';
+      sectionsEl.innerHTML = '';
+      rawEl.textContent = '';
       runBtn.disabled = true;
-      setChip('warn', 'Running…');
-      cardsEl.innerHTML = '';
-      diagList.innerHTML = '';
+
+      let url = baseInput.value.trim();
+      if (!url) {
+        alert('Please enter the Worker base URL.');
+        runBtn.disabled = false;
+        return;
+      }
+      url = url.replace(/\/$/, '') + '/debug/storage';
 
       try {
-        const resp = await fetch(buildUrl(), { method: 'GET', headers: { 'Accept': 'application/json' } });
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        const data = await resp.json();
-        render(data);
+        const res = await fetch(url, { method: 'GET', headers: { 'Accept': 'application/json' } });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+
+        // Summary
+        const summary = classifySummary(data.summaryCode);
+        summaryEl.className = `status ${summary.cls}`;
+        summaryEl.textContent = `${summary.text} (${data.summaryCode || 'N/A'})`;
+
+        // Detail per area
+        const groups = [
+          ['KV', data.kv],
+          ['R2', data.r2],
+          ['D1', data.d1]
+        ];
+
+        let html = '';
+        for (const [area, obj] of groups) {
+          if (!obj) continue;
+          const title = formatAreaTitle(area, obj);
+          const binding = obj.binding ? obj.binding : 'N/A';
+          const error = obj.error || (obj.ok ? 'No error' : 'Unknown error');
+          const step = nextStepFor(area, obj.code);
+
+          html += `
+            <div class="section">
+              <h2>${title}</h2>
+              <dl>
+                <dt>Binding</dt>
+                <dd><code>${binding}</code></dd>
+
+                <dt>Code</dt>
+                <dd><code>${obj.code || 'N/A'}</code></dd>
+
+                <dt>OK?</dt>
+                <dd>${obj.ok ? 'true' : 'false'}</dd>
+
+                <dt>Error / message</dt>
+                <dd>${error}</dd>
+
+                <dt>Suggested next step</dt>
+                <dd>${step}</dd>
+              </dl>
+            </div>
+          `;
+        }
+
+        // Diagnostics list, if any
+        if (Array.isArray(data.diagnostics) && data.diagnostics.length) {
+          html += `<div class="section"><h2>Diagnostics list</h2><ul>`;
+          for (const diag of data.diagnostics) {
+            html += `<li><code>${diag.code}</code> [${diag.area}]: ${diag.message}</li>`;
+          }
+          html += `</ul></div>`;
+        }
+
+        sectionsEl.innerHTML = html;
+
+        // Raw JSON view
+        rawEl.textContent = JSON.stringify(data, null, 2);
+
       } catch (err) {
-        setChip('bad', 'Network / CORS error');
-        tsEl.textContent = `Last run: failed (${new Date().toLocaleTimeString()})`;
-        cardsEl.innerHTML = `<p class="muted">${err.message || err}</p>`;
-        diagList.innerHTML = `<div class="diag-item"><div class="diag-header"><strong>NET-01</strong><span class="muted small">Network</span></div><pre>${err.message || err}</pre></div>`;
+        summaryEl.className = 'status bad';
+        summaryEl.textContent = `Network / CORS error: ${err.message || err}`;
+        sectionsEl.innerHTML = '';
+        rawEl.textContent = '';
       } finally {
         runBtn.disabled = false;
       }
     }
-
-    function render(data) {
-      const statusMap = { 'S-OK': ['ok', 'All bindings healthy'], 'S-PARTIAL': ['warn', 'Partial'], 'S-FAIL': ['bad', 'Offline'] };
-      const [cls, label] = statusMap[data.summaryCode] || ['warn', data.summaryCode || 'Unknown'];
-      setChip(cls, `${label} (${data.summaryCode || 'N/A'})`);
-      tsEl.textContent = `Last run: ${new Date().toLocaleTimeString()}`;
-
-      const segments = [ ['KV', data.kv], ['R2', data.r2], ['D1', data.d1] ];
-      cardsEl.innerHTML = segments.map(([area, payload]) => cardTemplate(area, payload || {})).join('');
-
-      if (Array.isArray(data.diagnostics) && data.diagnostics.length) {
-        diagList.innerHTML = data.diagnostics.map(diagTemplate).join('');
-      } else {
-        diagList.innerHTML = '<p class="muted">No diagnostics returned.</p>';
-      }
-    }
-
-    // Auto-run on load using current origin
-    runChecks();
   </script>
 </body>
 </html>
+
