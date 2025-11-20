@@ -28,7 +28,7 @@ id = "bf0f692b2ad540938126f26ae77aa851"
 binding = "OPS_TRANSCRIPTS_KV"  # lightweight transcripts / scan reports
 id = "ecd39e37d71b43b8bc26340ad9a27697"
 
-Optional: if this SAME worker ever stores scan artifacts in R2.
+# Optional: if this SAME worker ever stores scan artifacts in R2.
 [[r2_buckets]]
 binding = "OPS_ARTIFACTS_R2"
 bucket_name = "ops-artifacts"
