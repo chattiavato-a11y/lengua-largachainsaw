@@ -1,6 +1,8 @@
 // src/worker.js — withered-mouse-9aee
 // Integrity Gateway + Chat + STT + KB fallback + L7 escalation (pure JS, CF Workers Module)
 
+import { debugStorage } from "./debug/storage.js";
+
 /////////////////////// CONFIG ///////////////////////
 const MODEL_ID = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
 const DEFAULT_INTEGRITY_VALUE   = "https://chattiavato-a11y.github.io";
@@ -96,6 +98,11 @@ export default {
         allowed_origins: buildAllowedOrigins(env),
         channella_key: await resolveChannellaCanonical(env) // exposes canonical so UI can mirror it
       }), request, env);
+    }
+
+    if (url.pathname === "/debug/storage") {
+      const diagnostics = await debugStorage(env);
+      return applySecurityHeaders(json(diagnostics), request, env);
     }
 
     // Non-API root
