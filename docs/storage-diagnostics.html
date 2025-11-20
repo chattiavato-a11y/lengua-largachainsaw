@@ -185,15 +185,6 @@
       gap: 0.3rem;
     }
 
-    .callout {
-      border: 1px dashed var(--border);
-      border-radius: 12px;
-      padding: 0.75rem 0.9rem;
-      background: rgba(255,255,255,0.04);
-      color: var(--muted);
-      font-weight: 600;
-    }
-
     .diag-header {
       display: flex;
       align-items: center;
@@ -230,9 +221,7 @@
     <header>
       <div>
         <h1>Storage Diagnostics Console</h1>
-      <p class="lead">Run the worker's <code>/debug/storage</code> self-test, visualize binding health, and pinpoint failing links by fault code.</p>
-      <p class="muted small">This console is not linked from the main Chattia UI—open it directly at <code>/docs/storage-diagnostics.html</code> when you need to run checks.</p>
-      <div class="callout" role="status">To open this page, type your deployed domain followed by <code>/docs/storage-diagnostics.html</code> (for example, <code>https://YOUR-WORKER.workers.dev/docs/storage-diagnostics.html</code>). Nothing in the main app links here.</div>
+        <p class="lead">Run the worker's <code>/debug/storage</code> self-test, visualize binding health, and pinpoint failing links by fault code.</p>
       </div>
       <button id="runBtn" type="button" aria-label="Run storage diagnostics">Run checks</button>
     </header>
