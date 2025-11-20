@@ -14,27 +14,28 @@ binding = "AI"
 # Required: HMAC nonce replay defense (+ fallback honeypot store)
 [[kv_namespaces]]
 binding = "OPS_NONCE_KV"        # mint/use replay defense
-id = "01d6a01e13b74f939c0cd3e8b4e7f59b"          
-# replace with real KV id from dashboard
+id = "01d6a01e13b74f939c0cd3e8b4e7f59b"
 
-# Optional: separate honeypot banlist KV.
-# If you don’t create this, the worker will reuse OPS_NONCE_KV.
+# Separate honeypot banlist KV
 [[kv_namespaces]]
 binding = "OPS_BANLIST_KV"      # honeypot IP blocks
 id = "bf0f692b2ad540938126f26ae77aa851"
 
-# Optional: if you later add transcript storage in the code.
+# Lightweight transcripts / scan reports
 [[kv_namespaces]]
-binding = "OPS_TRANSCRIPTS_KV"  # lightweight transcripts / scan reports
+binding = "OPS_TRANSCRIPTS_KV"
 id = "ecd39e37d71b43b8bc26340ad9a27697"
 
-# Optional: if this SAME worker ever stores scan artifacts in R2.
-[[r2_buckets]]
-binding = "OPS_ARTIFACTS_R2"
-bucket_name = "ops-artifacts"
-# create this bucket in R2 first
+# ---------- R2 (WebLLM models) ----------
 
-# Optional: if this SAME worker ever writes training rows.
+# R2 bucket that will hold WebLLM models or related blobs.
+# In the Worker code this is available as env.R2_WEBLLM_MODELS
+[[r2_buckets]]
+binding = "R2_WEBLLM_MODELS"
+bucket_name = "r2-webllm-models"
+
+# ---------- D1 (training DB) ----------
+
 [[d1_databases]]
 binding = "OPS_TRAINING_DB"
 database_name = "ops_training_db"
