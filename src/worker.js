@@ -1,45 +1,70 @@
-// src/worker.js — Integrity Gateway + Chat + STT + Escalation (single Worker)
-import { SERVICE_DIRECTORY, SERVICE_DIRECTORY_PROMPT } from "../services/directory.js";
+// src/worker.js — withered-mouse-9aee
+// Integrity Gateway + Chat + STT + KB fallback + L7 escalation (pure JS, CF Workers Module)
 
-/* ---------- Config ---------- */
+/////////////////////// CONFIG ///////////////////////
 const MODEL_ID = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
-const DEFAULT_INTEGRITY_VALUE = "https://chattiavato-a11y.github.io";
+const DEFAULT_INTEGRITY_VALUE   = "https://chattiavato-a11y.github.io";
 const DEFAULT_INTEGRITY_GATEWAY = "https://withered-mouse-9aee.grabem-holdem-nuts-right.workers.dev";
 const DEFAULT_HIGH_CONFIDENCE_URL = "https://ops-chattia-api.grabem-holdem-nuts-right.workers.dev/";
-const BASE_ALLOWED_ORIGINS = ["https://chattiavato-a11y.github.io"];
 const DEFAULT_INTEGRITY_PROTOCOLS = "CORS,CSP,OPS-CySec-Core,CISA,NIST,PCI-DSS,SHA-384,SHA-512";
+const BASE_ALLOWED_ORIGINS = ["https://chattiavato-a11y.github.io"];
 const DEFAULT_HONEYPOT_FIELDS = ["hp_email","hp_name","hp_field","honeypot","hp_text","botcheck","bot_field","trap_field","company"];
 const HONEYPOT_BLOCK_TTL_SECONDS = 86400; // 24h
-const CHANNELLA_HEADER = "X-OPS-Channella";
-const DEFAULT_CHANNELLA_KEY = "ops-channella-v1";
 const SESSION_NONCE_PATTERN = /^[a-f0-9]{32}$/;
+const CHANNELLA_HEADER = "X-OPS-Channella";        // request/response header carrying canonical channella key
+const CHANNELLA_PUB_HEADER = "X-Channella-Pub";    // optional header (client may send base64url JWK thumbprint)
+const DEFAULT_CHANNELLA_KEY = "ops-channella-v1";  // fallback if no JWK provided
 
-/* ---------- Governance ---------- */
-const SYSTEM_PROMPT =
-  "You are Chattia, an empathetic, security-aware assistant that communicates with clarity and inclusive language. " +
-  "Deliver concise, actionable answers aligned with OPS Core CyberSec governance. Provide step-by-step help when useful, " +
-  "call out safety cautions, respect accessibility and privacy expectations, and tie every insight back to the OPS Remote " +
-  "Professional Network service directory pillars or solutions when relevant.";
+/////////////////////// GOVERNANCE PROMPTS ///////////////////////
+const SYSTEM_PROMPTS = {
+  en:
+    "You are Chattia, an empathetic, security-aware assistant. Be concise and actionable. " +
+    "Explain step-by-step when useful. Call out cautions. Align with OPS Core CyberSec governance.",
+  es:
+    "Eres Chattia, una asistente empática y consciente de seguridad. Sé concisa y accionable. " +
+    "Explica paso a paso cuando ayude. Señala precauciones. Alinea con el marco OPS Core CyberSec."
+};
+const LANGUAGE_PROMPTS = {
+  en: "Respond in English unless the user clearly switches language.",
+  es: "Responde en español salvo que la persona cambie claramente de idioma."
+};
+// Minimal directory prompt (inline; no imports)
+const SERVICE_DIRECTORY_PROMPTS = {
+  en:
+    "OPS Remote Professional Network pillars: Business Operations, Contact Center, IT Support, Professionals On-Demand. " +
+    "Tie relevant answers to these pillars when appropriate.",
+  es:
+    "Pilares de OPS Remote Professional Network: Operaciones de Negocio, Contact Center, Soporte TI, Profesionales On-Demand. " +
+    "Vincula respuestas relevantes a estos pilares cuando corresponda."
+};
 
-const WARNING_MESSAGE   = "Apologies, but I cannot execute that request, do you have any questions about our website?";
-const TERMINATE_MESSAGE = "Apologies, but I must not continue with this chat and I must end this session.";
+// Guard messages (multi-lingual)
+const WARNING_MESSAGES = {
+  en: "Apologies, but I cannot execute that request, do you have any questions about our website?",
+  es: "Disculpa, no puedo ejecutar esa solicitud. ¿Tienes preguntas sobre nuestro sitio?"
+};
+const TERMINATE_MESSAGES = {
+  en: "Apologies, but I must not continue with this chat and I must end this session.",
+  es: "Disculpa, no debo continuar con este chat y debo terminar la sesión."
+};
+const ALL_GUARD_MESSAGES = [
+  WARNING_MESSAGES.en, WARNING_MESSAGES.es,
+  TERMINATE_MESSAGES.en, TERMINATE_MESSAGES.es
+];
+
+// Simple threat heuristics
 const MALICIOUS_PATTERNS = [/<[^>]*>/i,/script/i,/malicious/i,/attack/i,/ignore/i,/prompt/i,/hack/i,/drop\s+table/i];
 const SECURITY_THREAT_PATTERNS = [
-  /<script/i,
-  /javascript:/i,
-  /onerror\s*=|onload\s*=/i,
-  /data:text\/html/i,
-  /union\s+select/i,
-  /drop\s+table/i,
+  /<script/i,/javascript:/i,/onerror\s*=|onload\s*=/i,/data:text\/html/i,/union\s+select/i,/drop\s+table/i,
   /xss|csrf|sql\s+injection|sniffing|spoofing|phishing|clon(e|ing)|malware/i
 ];
 const SECURITY_ALERT_MESSAGES = Object.freeze({
   en: "Security sweep blocked suspicious instructions. Please restate your OPS request without code or exploits.",
   es: "El barrido de seguridad bloqueó instrucciones sospechosas. Reformula tu solicitud OPS sin código ni exploits."
 });
-const WEBSITE_KEYWORDS   = ["website","site","chattia","product","service","support","order","account","pricing","contact","help"];
+const WEBSITE_KEYWORDS = ["website","site","chattia","product","service","support","order","account","pricing","contact","help"];
 
-/* ---------- Minimal BM25-ish website KB ---------- */
+// Minimal website KB for local answers (BM25-ish)
 const WEBSITE_KB = buildWebsiteKb();
 const STOP_WORDS = {
   en: new Set("a,about,an,and,are,as,at,be,by,for,from,how,in,is,it,of,on,or,our,that,the,their,to,we,what,when,with,can".split(",")),
@@ -47,46 +72,35 @@ const STOP_WORDS = {
 };
 const AVG_DOC_LENGTH = WEBSITE_KB.reduce((s,d)=>s+d.content.split(/\s+/).length,0)/(WEBSITE_KB.length||1);
 
-/* ======================================================================= */
-
+/////////////////////// ENTRY ///////////////////////
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     const method = request.method.toUpperCase();
 
-    // Preflight for auth/health/fallback paths
-    if ((url.pathname.startsWith("/auth/") || url.pathname.startsWith("/health/") || url.pathname.startsWith("/fallback/")) && method === "OPTIONS") {
+    // CORS preflight
+    if ((url.pathname.startsWith("/api/") || url.pathname.startsWith("/auth/") || url.pathname.startsWith("/fallback/")) && method === "OPTIONS") {
       return applySecurityHeaders(new Response(null, { status: 204 }), request, env);
     }
 
-    // CORS preflight for /api/*
-    if (url.pathname.startsWith("/api/") && method === "OPTIONS") {
-      return applySecurityHeaders(new Response(null,{status:204}), request, env);
-    }
-
-    // Health probes
+    // Health
     if (url.pathname === "/health" || url.pathname === "/health/ok") {
       return applySecurityHeaders(json({ ok:true }), request, env);
     }
-    if (url.pathname === "/health/origin") {
-      const origin = request.headers.get("Origin") || "";
-      const allowed = getAllowedOrigin(origin, env);
-      return applySecurityHeaders(json({ ok:true, reqOrigin: origin, allowedNow: Boolean(allowed) }), request, env);
-    }
     if (url.pathname === "/health/summary") {
-      const ttl = getSignatureTtl(env);
       return applySecurityHeaders(json({
-        ok:true,
-        signature_ttl: ttl,
+        ok: true,
+        signature_ttl: getSignatureTtl(env),
         gateway: resolveIntegrityGateway(env),
         protocols: resolveIntegrityProtocols(env),
-        allowed_origins: buildAllowedOrigins(env)
+        allowed_origins: buildAllowedOrigins(env),
+        channella_key: await resolveChannellaCanonical(env) // exposes canonical so UI can mirror it
       }), request, env);
     }
 
-    // Root or non-API (just OK)
-    if (url.pathname === "/" || !url.pathname.startsWith("/api/") && !url.pathname.startsWith("/auth/") && !url.pathname.startsWith("/fallback/")) {
-      return applySecurityHeaders(new Response("OK",{status:200}), request, env);
+    // Non-API root
+    if (url.pathname === "/" || (!url.pathname.startsWith("/api/") && !url.pathname.startsWith("/auth/") && !url.pathname.startsWith("/fallback/"))) {
+      return applySecurityHeaders(new Response("OK", { status: 200 }), request, env);
     }
 
     // Detached signature mint
@@ -110,81 +124,77 @@ export default {
       return applySecurityHeaders(out, request, env);
     }
 
-    // Client-side fallback escalation telemetry
+    // Client-side fallback telemetry
     if (url.pathname === "/fallback/escalate") {
-      if (method !== "POST") return applySecurityHeaders(json({ error: "method_not_allowed" }, 405), request, env);
+      if (method !== "POST") return applySecurityHeaders(json({ error:"method_not_allowed" },405), request, env);
       const gate = enforceIntegrityHeadersOnly(request, env);
       if (gate) return applySecurityHeaders(gate, request, env);
-      let payload = {};
-      try { payload = await request.json(); }
-      catch { return applySecurityHeaders(json({ error: "Invalid JSON" }, 400), request, env); }
-      await forwardEscalation({
-        ...payload,
-        gateway: "ops-integrity-gateway",
-        timestamp: payload.timestamp || new Date().toISOString()
-      }, env).catch(()=>{});
-      return applySecurityHeaders(json({ escalated:true }), request, env);
+      try {
+        const payload = await request.json();
+        await forwardEscalation({
+          ...payload,
+          gateway: "ops-integrity-gateway",
+          timestamp: payload?.timestamp || new Date().toISOString()
+        }, env).catch(()=>{});
+        return applySecurityHeaders(json({ escalated:true }), request, env);
+      } catch {
+        return applySecurityHeaders(json({ error:"Invalid JSON" },400), request, env);
+      }
     }
 
     return applySecurityHeaders(json({error:"not_found"},404), request, env);
   }
 };
 
-/* =========================== AUTH: /auth/issue =========================== */
+/////////////////////// AUTH ///////////////////////
 async function handleAuthIssue(request, env) {
   const headerGate = enforceIntegrityHeadersOnly(request, env);
   if (headerGate) return headerGate;
-  if (!env.SHARED_KEY) return json({error:"Signature service unavailable"},500);
+  if (!env.SHARED_KEY) return json({ error:"Signature service unavailable" }, 500);
 
   let payload;
-  try { payload = await request.json(); } catch { return json({error:"Invalid JSON"},400); }
+  try { payload = await request.json(); } catch { return json({ error:"Invalid JSON" },400); }
 
-  const tsRaw     = payload?.ts ?? payload?.timestamp;
-  const nonceRaw  = payload?.nonce;
+  const tsRaw = payload?.ts ?? payload?.timestamp;
+  const nonceRaw = payload?.nonce;
   const methodRaw = payload?.method;
-  const pathRaw   = payload?.path;
-  const bodyShaRaw= payload?.body_sha256 ?? payload?.bodySha256;
+  const pathRaw = payload?.path;
+  const bodyShaRaw = payload?.body_sha256 ?? payload?.bodySha256;
 
-  const ts = Number(tsRaw);
-  const now = Math.floor(Date.now()/1000);
-  const ttl = getSignatureTtl(env);
-  if (!Number.isFinite(ts)) return json({error:"Invalid timestamp"},400);
-  if (ts > now + 5 || now - ts > ttl) return json({error:"Timestamp out of range"},400);
+  const ts = Number(tsRaw), now = Math.floor(Date.now()/1000), ttl = getSignatureTtl(env);
+  if (!Number.isFinite(ts)) return json({ error:"Invalid timestamp" },400);
+  if (ts > now + 5 || now - ts > ttl) return json({ error:"Timestamp out of range" },400);
 
   const nonce = typeof nonceRaw === "string" ? nonceRaw.trim().toLowerCase() : "";
-  if (!/^[a-f0-9]{32}$/.test(nonce)) return json({error:"Invalid nonce"},400);
+  if (!SESSION_NONCE_PATTERN.test(nonce)) return json({ error:"Invalid nonce" },400);
 
   const method = typeof methodRaw === "string" ? methodRaw.trim().toUpperCase() : "";
-  if (method !== "POST") return json({error:"Unsupported method"},400);
+  if (method !== "POST") return json({ error:"Unsupported method" },400);
 
   const path = typeof pathRaw === "string" ? pathRaw.trim() : "";
-  if (!path.startsWith("/api/")) return json({error:"Invalid path"},400);
+  if (!path.startsWith("/api/")) return json({ error:"Invalid path" },400);
 
   const bodySha = typeof bodyShaRaw === "string" ? bodyShaRaw.trim().toLowerCase() : "";
-  if (!/^[a-f0-9]{64}$/.test(bodySha)) return json({error:"Invalid body digest"},400);
+  if (!/^[a-f0-9]{64}$/.test(bodySha)) return json({ error:"Invalid body digest" },400);
 
   if (env.OPS_NONCE_KV) {
     const mintKey = `mint:${nonce}:${ts}`;
     const exists = await env.OPS_NONCE_KV.get(mintKey);
-    if (exists) return json({error:"Nonce reuse detected"},409);
-    await env.OPS_NONCE_KV.put(mintKey,"1",{expirationTtl:ttl});
+    if (exists) return json({ error:"Nonce reuse detected" },409);
+    await env.OPS_NONCE_KV.put(mintKey, "1", { expirationTtl: ttl });
   }
 
   const canonical = `${ts}.${nonce}.${method}.${path}.${bodySha}`;
+  // SHARED_KEY is base64; hmacSha512B64 will decode it and return base64 signature
   const signature = await hmacSha512B64(env.SHARED_KEY, canonical);
   const remaining = Math.max(0, ttl - Math.max(0, now - ts));
-
-  return new Response(JSON.stringify({signature, expires_in: remaining}), {
-    status:200,
-    headers: {
-      "content-type":"application/json; charset=UTF-8",
-      "cache-control":"no-store",
-      "x-signature-ttl": String(ttl)
-    }
+  return new Response(JSON.stringify({ signature, expires_in: remaining }), {
+    status: 200,
+    headers: { "content-type":"application/json; charset=UTF-8","cache-control":"no-store","x-signature-ttl":String(ttl) }
   });
 }
 
-/* ============================ CHAT: /api/chat ============================ */
+/////////////////////// CHAT ///////////////////////
 async function handleChatRequest(request, env) {
   const honeypotBan = await checkHoneypotBan(request, env);
   if (honeypotBan?.blocked) return honeypotBlockedResponse(honeypotBan.reason, honeypotBan.until);
@@ -201,9 +211,9 @@ async function handleChatRequest(request, env) {
       return honeypotBlockedResponse(hp.reason);
     }
 
-    const turnstileToken = extractTurnstileToken(body);
-    const turnstileGate  = await enforceTurnstile(turnstileToken, request, env);
-    if (turnstileGate) return turnstileGate;
+    const turnToken = extractTurnstileToken(body);
+    const turnGate = await enforceTurnstile(turnToken, request, env);
+    if (turnGate) return turnGate;
 
     const rawMetadata = body && typeof body === "object" ? body.metadata : undefined;
     const metadata = (rawMetadata && typeof rawMetadata === "object") ? { ...rawMetadata } : {};
@@ -214,20 +224,17 @@ async function handleChatRequest(request, env) {
       ? messages.filter(m => m && typeof m.content === "string" && m.content.trim())
       : [];
 
-    const preferredLocale = detectPreferredLocale(normalized, metadata);
-    if (!metadata.locale) metadata.locale = preferredLocale;
-
+    // Policy sweep
     const pol = evaluatePolicy(normalized);
     if (pol.blocked) return await buildGuardedResponse(pol.reply, env);
 
-    const sanitized = normalized.map(m => m.role === "user"
-      ? ({...m, content: sanitizeText(m.content)})
-      : m
-    );
-
+    // Sanitize + prompts
+    const sanitized = normalized.map(m => m.role === "user" ? ({ ...m, content: sanitizeText(m.content) }) : m);
+    const preferredLocale = detectPreferredLocale(sanitized, metadata);
+    if (!metadata.locale) metadata.locale = preferredLocale;
     const preparedMessages = ensureGovernancePrompts(sanitized, metadata.locale);
 
-    // Quick website KB route for default/fallback friendliness
+    // Quick KB path
     const lastUser = [...sanitized].reverse().find(m => m.role === "user")?.content || "";
     const kb = routeWebsiteDefaultFlow(lastUser);
     if (kb) return await buildKnowledgeResponse(kb, env, metadata.locale);
@@ -242,7 +249,7 @@ async function handleChatRequest(request, env) {
       getDefaultReply(metadata.locale);
 
     let trimmed = String(reply).trim();
-    let conf = assessConfidence(trimmed, ai, metadata.locale);
+    let conf = assessConfidence(trimmed, ai);
     let escalated = Boolean(metadata?.escalated);
 
     // Escalate on low confidence
@@ -251,7 +258,7 @@ async function handleChatRequest(request, env) {
       if (bump?.reply) {
         reply = bump.reply;
         trimmed = String(reply).trim();
-        conf = { level: "high", reasons: ["escalated"] };
+        conf = { level:"high", reasons:["escalated"] };
         ai = bump.aiResponse ?? ai;
         model = bump.model ?? model;
         escalated = true;
@@ -266,12 +273,12 @@ async function handleChatRequest(request, env) {
       reply: trimmed,
       model,
       usage: ai?.usage ?? null,
-      confidence: conf.level,                 // "high" | "medium" | "low"
+      confidence: conf.level,
       confidence_reasons: conf.reasons,
       escalated
     }), {
-      status:200,
-      headers:{
+      status: 200,
+      headers: {
         "content-type":"application/json; charset=UTF-8",
         "cache-control":"no-store",
         "x-model": model,
@@ -284,11 +291,11 @@ async function handleChatRequest(request, env) {
     });
 
   } catch {
-    return json({error:"Failed to process request"},500);
+    return json({ error:"Failed to process request" },500);
   }
 }
 
-/* ============================= STT: /api/stt ============================= */
+/////////////////////// STT ///////////////////////
 async function handleSttRequest(request, env) {
   const honeypotBan = await checkHoneypotBan(request, env);
   if (honeypotBan?.blocked) return honeypotBlockedResponse(honeypotBan.reason, honeypotBan.until);
@@ -298,7 +305,7 @@ async function handleSttRequest(request, env) {
 
   try {
     const ct = (request.headers.get("content-type") || "").toLowerCase();
-    if (!ct.includes("multipart/form-data")) return json({error:"Expected multipart/form-data"},400);
+    if (!ct.includes("multipart/form-data")) return json({ error:"Expected multipart/form-data" },400);
 
     const form = await request.formData();
 
@@ -309,14 +316,14 @@ async function handleSttRequest(request, env) {
     }
 
     const token = extractTurnstileToken(form);
-    const turnstileGate = await enforceTurnstile(token, request, env);
-    if (turnstileGate) return turnstileGate;
+    const turnGate = await enforceTurnstile(token, request, env);
+    if (turnGate) return turnGate;
 
     const audio = form.get("audio");
-    if (!(audio instanceof File)) return json({error:"Audio blob missing"},400);
+    if (!(audio instanceof File)) return json({ error:"Audio blob missing" },400);
 
     const maxBytes = clampInt(env.MAX_AUDIO_BYTES, 8_000_000);
-    if (audio.size > maxBytes) return json({error:"Audio payload exceeds limit"},413);
+    if (audio.size > maxBytes) return json({ error:"Audio payload exceeds limit" },413);
 
     const buf = await audio.arrayBuffer();
     const bytes = new Uint8Array(buf);
@@ -334,8 +341,8 @@ async function handleSttRequest(request, env) {
     return new Response(JSON.stringify({ text: clean }), {
       status: 200,
       headers: {
-        "content-type": "application/json; charset=UTF-8",
-        "cache-control": "no-store",
+        "content-type":"application/json; charset=UTF-8",
+        "cache-control":"no-store",
         "x-tier": aiResponse?.tier || "?",
         "x-model": model,
         "x-transcript-digest-sha512": transcriptDigest,
@@ -345,29 +352,28 @@ async function handleSttRequest(request, env) {
     });
 
   } catch {
-    return json({error:"Failed to transcribe audio"},500);
+    return json({ error:"Failed to transcribe audio" },500);
   }
 }
 
-/* ============================ Escalation (L7) ============================ */
+/////////////////////// L7 ESCALATION ///////////////////////
 async function escalateHighConfidenceChat({ body, sanitizedMessages, request, env }) {
   const base = resolveHighConfidenceUrl(env);
   if (!base) return null;
+  let target; try { target = new URL("/api/chat", base).toString(); } catch { return null; }
 
-  let target;
-  try { target = new URL("/api/chat", base).toString(); }
-  catch { return null; }
-
-  const metadata = { ...(body?.metadata||{}), escalated: true, tier: body?.metadata?.tier || "premium" };
+  const metadata = { ...(body?.metadata||{}), escalated:true, tier: body?.metadata?.tier || "premium" };
   const payload = { messages: sanitizedMessages, metadata };
 
   const headers = new Headers({ "content-type":"application/json" });
-  for (const k of [
-    "x-integrity","x-integrity-gateway","x-integrity-protocols",
-    "x-request-signature","x-request-timestamp","x-request-nonce"
-  ]) {
+  for (const k of ["x-integrity","x-integrity-gateway","x-integrity-protocols","x-request-signature","x-request-timestamp","x-request-nonce",CHANNELLA_HEADER,"x-integrity-key",CHANNELLA_PUB_HEADER]) {
     const v = request.headers.get(k); if (v) headers.set(k, v);
   }
+
+  // NOTE: if you want HMAC between Workers, you can do:
+  // const bodyText = JSON.stringify(payload);
+  // const detachedHex = await signBodyWithHmac(env, bodyText);
+  // headers.set("X-Signature-HMAC-SHA512", detachedHex);
 
   try {
     const res = await fetch(target, { method:"POST", headers, body: JSON.stringify(payload) });
@@ -378,68 +384,29 @@ async function escalateHighConfidenceChat({ body, sanitizedMessages, request, en
       data?.reply || data?.response || data?.result || data?.output_text;
     if (!reply) return null;
 
-    return {
-      reply,
-      aiResponse: { response: reply, usage: data?.usage ?? null },
-      model: data?.model || data?.x_model || "escalated"
-    };
-  } catch {
-    return null;
-  }
+    return { reply, aiResponse: { response: reply, usage: data?.usage ?? null }, model: data?.model || data?.x_model || "escalated" };
+  } catch { return null; }
 }
 
 async function forwardEscalation(payload, env) {
   const hook = (env.ESCALATION_WEBHOOK || "").trim();
   if (!hook) return;
-  try {
-    await fetch(hook, { method:"POST", headers:{ "content-type":"application/json" }, body: JSON.stringify(payload) });
-  } catch {}
+  try { await fetch(hook, { method:"POST", headers:{ "content-type":"application/json" }, body: JSON.stringify(payload) }); } catch {}
 }
 
-/* ============================ Policy + BM25 ============================ */
-function sanitizeText(s) {
+/////////////////////// POLICY + KB ///////////////////////
+function sanitizeText(s){
   if (!s) return "";
-  const cleared = cleanseUserInput(String(s));
-  return cleared.replace(/[^\x09\x0A\x0D\x20-\x7E\u00A0-\uFFFF]/g,"").replace(/\s+/g," ").trim();
-}
-function cleanseUserInput(input){
-  if (!input) return "";
-  return String(input)
+  return String(s)
     .replace(/<[^>]*>/g," ")
     .replace(/javascript:/gi,"")
     .replace(/data:text\/html[^\s]*/gi,"")
     .replace(/on\w+\s*=/gi," ")
-    .replace(/\b(alert|prompt|confirm)\s*\(/gi,"$1 ")
+    .replace(/[^\x09\x0A\x0D\x20-\x7E\u00A0-\uFFFF]/g,"")
+    .replace(/\s+/g," ")
     .trim();
 }
-function sanitizeLocale(s) {
-  if (!s) return "en";
-  const t = String(s).trim().toLowerCase();
-  return /^[a-z]{2}(-[a-z]{2})?$/.test(t) ? t : "en";
-}
-function runSecuritySweep(messages, locale){
-  if (!Array.isArray(messages) || !messages.length) return { blocked:false };
-  const matches = [];
-  for (const msg of messages){
-    if (!msg || msg.role !== "user" || !msg.content) continue;
-    const hits = detectThreatIndicators(msg.content);
-    if (hits.length){
-      matches.push({ hits, snippet: sanitizeText(String(msg.content)).slice(0,160) });
-    }
-  }
-  if (!matches.length) return { blocked:false };
-  return {
-    blocked:true,
-    reply: SECURITY_ALERT_MESSAGES[locale === "es" ? "es" : "en"],
-    hits: matches
-  };
-}
-function detectThreatIndicators(text){
-  if (!text) return [];
-  const normalized = String(text).toLowerCase();
-  return SECURITY_THREAT_PATTERNS.filter(rx => rx.test(normalized)).map(rx => rx.toString());
-}
-function evaluatePolicy(messages) {
+function evaluatePolicy(messages){
   if (!Array.isArray(messages)||!messages.length) return {blocked:false};
   const users = messages.filter(m=>m.role==="user");
   if (!users.length) return {blocked:false};
@@ -451,9 +418,9 @@ function evaluatePolicy(messages) {
   const onTopic  = WEBSITE_KEYWORDS.some(k=>lower.includes(k));
   if (!looksBad && onTopic) return {blocked:false};
 
-  const langPreference = detectLanguage(last);
-  const warning = WARNING_MESSAGES[langPreference] || WARNING_MESSAGES.en;
-  const terminate = TERMINATE_MESSAGES[langPreference] || TERMINATE_MESSAGES.en;
+  const lang = detectLanguage(last);
+  const warning  = WARNING_MESSAGES[lang]  || WARNING_MESSAGES.en;
+  const terminate= TERMINATE_MESSAGES[lang]|| TERMINATE_MESSAGES.en;
 
   const guardCount = messages.filter(m=>m.role==="assistant" && ALL_GUARD_MESSAGES.some(msg => m.content.includes(msg))).length;
   if (guardCount>=1) return {blocked:true, reply:terminate};
@@ -494,6 +461,7 @@ function routeWebsiteDefaultFlow(usr){
   const lang = detectLanguage(q);
   const terms = tokenize(q).filter(t=>!STOP_WORDS[lang]?.has(t));
   if (!terms.length) return null;
+
   let cands = WEBSITE_KB.filter(d=>d.lang===lang);
   if (!cands.length) cands = WEBSITE_KB;
 
@@ -510,7 +478,6 @@ function routeWebsiteDefaultFlow(usr){
 
 async function buildKnowledgeResponse(kb, env, locale){
   const reply = (kb?.reply || "").trim();
-  const language = (locale === "es" || kb?.language === "es") ? "es" : "en";
   const digest = await sha512B64(reply);
   const gw = resolveIntegrityGateway(env);
   const protos = resolveIntegrityProtocols(env);
@@ -521,7 +488,7 @@ async function buildKnowledgeResponse(kb, env, locale){
     confidence: "high",
     confidence_reasons: ["website_kb"],
     escalated: false,
-    language
+    language: (locale==="es" || kb?.language==="es") ? "es" : "en"
   }), {
     status:200,
     headers:{
@@ -566,11 +533,11 @@ async function buildGuardedResponse(message, env){
 }
 
 function ensureGovernancePrompts(messages, locale){
-  const filtered = [];
   const directoryPrompt = getDirectoryPrompt(locale);
   const systemPrompt = getSystemPrompt(locale);
   const languagePrompt = getLanguagePrompt(locale);
   const known = new Set([directoryPrompt.trim(), systemPrompt.trim(), languagePrompt.trim()]);
+  const filtered = [];
   for (const msg of messages || []){
     if (msg?.role === "system"){
       const content = (msg.content||"").trim();
@@ -585,16 +552,9 @@ function ensureGovernancePrompts(messages, locale){
     ...filtered
   ];
 }
-
-function getSystemPrompt(locale){
-  return SYSTEM_PROMPTS[locale === "es" ? "es" : "en"];
-}
-function getDirectoryPrompt(locale){
-  return SERVICE_DIRECTORY_PROMPTS[locale === "es" ? "es" : "en"] || SERVICE_DIRECTORY_PROMPTS.en;
-}
-function getLanguagePrompt(locale){
-  return LANGUAGE_PROMPTS[locale === "es" ? "es" : "en"];
-}
+function getSystemPrompt(locale){ return SYSTEM_PROMPTS[locale==="es"?"es":"en"]; }
+function getDirectoryPrompt(locale){ return SERVICE_DIRECTORY_PROMPTS[locale==="es"?"es":"en"] || SERVICE_DIRECTORY_PROMPTS.en; }
+function getLanguagePrompt(locale){ return LANGUAGE_PROMPTS[locale==="es"?"es":"en"]; }
 function detectPreferredLocale(messages, metadata){
   const localeHint = metadata?.locale || metadata?.lang || metadata?.language;
   const sanitized = sanitizeLocale(localeHint || "");
@@ -608,7 +568,9 @@ function detectPreferredLocale(messages, metadata){
   return "en";
 }
 function getDefaultReply(locale){
-  return DEFAULT_FAILURE_REPLIES[locale === "es" ? "es" : "en"];
+  return (locale==="es")
+    ? "¿En qué puedo ayudarte con OPS hoy?"
+    : "How can I help you with OPS today?";
 }
 
 function buildWebsiteKb(){
@@ -617,148 +579,41 @@ function buildWebsiteKb(){
       id: "ops-hero",
       lang: "en",
       title: "OPS Website — Hero",
-      content:
-        "Ops Online Support helps teams keep momentum by handling operations so you can focus on growth.",
-      summaryEn:
-        "Ops Online Support keeps you moving by handling operations so your team can focus on growth.",
-      summaryEs:
-        "Ops Online Support mantiene tu impulso gestionando operaciones para que tu equipo se enfoque en crecer."
+      content: "Ops Online Support helps teams keep momentum by handling operations so you can focus on growth.",
+      summaryEn: "Ops Online Support keeps you moving by handling operations so your team can focus on growth.",
+      summaryEs: "Ops Online Support mantiene tu impulso gestionando operaciones para que tu equipo se enfoque en crecer."
     },
     {
       id: "ops-pillars",
       lang: "en",
       title: "Service pillars",
-      content:
-        "Service pillars: Business Operations, Contact Center, IT Support, Professionals On-Demand.",
-      summaryEn:
-        "Our pillars: Business Operations, Contact Center, IT Support, and Professionals On-Demand.",
-      summaryEs:
-        "Nuestros pilares: Operaciones de Negocio, Contact Center, Soporte TI y Profesionales On-Demand."
+      content: "Service pillars: Business Operations, Contact Center, IT Support, Professionals On-Demand.",
+      summaryEn: "Our pillars: Business Operations, Contact Center, IT Support, and Professionals On-Demand.",
+      summaryEs: "Nuestros pilares: Operaciones de Negocio, Contact Center, Soporte TI y Profesionales On-Demand."
     }
   ];
-
-  docs.push(...buildServiceDirectoryDocs());
   return docs;
 }
 
-function buildServiceDirectoryDocs(){
-  if (!SERVICE_DIRECTORY) return [];
-  const docs = [];
-  const overview = SERVICE_DIRECTORY.overview;
-  const serviceNames = SERVICE_DIRECTORY.servicePillars?.map(p=>p.name).join(", ") || "";
-  const solutionNames = SERVICE_DIRECTORY.solutions?.map(s=>s.name).join(", ") || "";
-  const proofPointsEn = SERVICE_DIRECTORY.proofPoints?.join(", ") || "n/a";
-  const proofPointsEs = (SERVICE_DIRECTORY.proofPointsEs || SERVICE_DIRECTORY.proofPoints || []).join(", ") || proofPointsEn;
-  if (overview){
-    const overviewContentEn = `${overview.name} focuses on ${overview.focus}. Service pillars include ${serviceNames}. Solutions cover ${solutionNames}. Operational proof points: ${proofPointsEn}.`;
-    const overviewContentEs = `${overview.name} se enfoca en ${overview.focusEs || overview.focus}. Los pilares incluyen ${serviceNames}. Las soluciones cubren ${solutionNames}. Pruebas operativas: ${proofPointsEs}.`;
-    pushDocVariants(docs, {
-      id: "ops-directory-overview",
-      titleEn: `${overview.name} overview`,
-      titleEs: `Resumen de ${overview.name}`,
-      contentEn: overviewContentEn,
-      contentEs: overviewContentEs,
-      summaryEn: "OPS Remote Professional Network unites remote pods for Business Operations, Contact Center, IT Support, and Professionals on demand.",
-      summaryEs: "La Red de Profesionales Remotos OPS reúne pods remotos para Operaciones, Contact Center, Soporte TI y especialistas bajo demanda."
-    });
-  }
-
-  for (const pillar of SERVICE_DIRECTORY.servicePillars || []){
-    pushDocVariants(docs, {
-      id: `pillar-${slugifyId(pillar.name)}`,
-      titleEn: `${pillar.name} pillar`,
-      titleEs: `Pilar ${pillar.name}`,
-      contentEn: pillar.summary,
-      contentEs: pillar.summaryEs || pillar.summary,
-      summaryEn: pillar.summary,
-      summaryEs: pillar.summaryEs || pillar.summary
-    });
-  }
-
-  for (const solution of SERVICE_DIRECTORY.solutions || []){
-    pushDocVariants(docs, {
-      id: `solution-${slugifyId(solution.name)}`,
-      titleEn: `${solution.name} solution`,
-      titleEs: `Solución ${solution.name}`,
-      contentEn: solution.coverage,
-      contentEs: solution.coverageEs || solution.coverage,
-      summaryEn: solution.coverage,
-      summaryEs: solution.coverageEs || solution.coverage
-    });
-  }
-
-  const talent = SERVICE_DIRECTORY.talentNetwork || {};
-  const talentLines = talent.applicationHighlights || [];
-  const talentLinesEs = talent.applicationHighlightsEs || talentLines;
-  const commitments = talent.commitments || [];
-  const commitmentsEs = talent.commitmentsEs || commitments;
-  if (talentLines.length){
-    pushDocVariants(docs, {
-      id: "talent-network-highlights",
-      titleEn: "Talent network highlights",
-      titleEs: "Highlights de la red de talento",
-      contentEn: `Applicants emphasize ${talentLines.join("; ")}. Community commitments: ${commitments.join("; ")}.`,
-      contentEs: `Las personas postulantes destacan ${talentLinesEs.join("; ")}. Compromisos comunitarios: ${commitmentsEs.join("; ")}.`,
-      summaryEn: "OPS talent applicants share crafts, skills, education, continued learning, and guild interests across Business Operations, Contact Center, IT Support, Professionals, Analytics & Insights.",
-      summaryEs: "Los postulantes comparten oficios, habilidades, estudios, aprendizaje continuo e intereses en Operaciones, Contact Center, Soporte TI, Profesionales y Analítica."
-    });
-  }
-
-  if (SERVICE_DIRECTORY.contactPathways?.length){
-    const contactEn = SERVICE_DIRECTORY.contactPathways.join("; ");
-    const contactEs = (SERVICE_DIRECTORY.contactPathwaysEs || SERVICE_DIRECTORY.contactPathways).join("; ");
-    pushDocVariants(docs, {
-      id: "ops-contact-pathways",
-      titleEn: "OPS contact pathways",
-      titleEs: "Rutas de contacto OPS",
-      contentEn: contactEn,
-      contentEs: contactEs,
-      summaryEn: "Contact OPS via discovery calls, direct consultations, or hiring remote specialists across CX, IT, and operations.",
-      summaryEs: "Contacta a OPS mediante discovery calls, consultas directas o contratación de especialistas remotos en CX, TI y operaciones."
-    });
-  }
-
-  return docs;
-}
-
-function translatePillarSummary(name, fallback){
-  const dict = {
-    "Business Operations": "Operaciones de Negocio: playbooks que preservan la higiene financiera, facturación y tableros ejecutivos.",
-    "Contact Center (Beta)": "Contact Center (Beta): agentes omnicanal con señales de sentimiento y bases de conocimiento actualizadas.",
-    "IT Support (Beta)": "Soporte TI (Beta): pods listos para incidentes con triaje documentado, telemetría integrada y continuidad.",
-    "Professionals": "Profesionales: equipos de insights con analítica predictiva y marcos de retroalimentación orientados al crecimiento."
-  };
-  return dict[name] || fallback;
-}
-function translateSolutionSummary(name, fallback){
-  const dict = {
-    "Business Operations": "Cobertura de facturación, cuentas por pagar/cobrar, coordinación de proveedores, soporte administrativo y marketing.",
-    "Contact Center (Beta)": "CX multicanal orientado a relaciones con resolución rápida.",
-    "IT Support (Beta)": "Soporte TI integral con mesa de ayuda, tickets e incidentes.",
-    "Professionals On Demand": "Asistentes y especialistas desplegables para sprints o compromisos prolongados."
-  };
-  return dict[name] || fallback;
-}
-function slugifyId(input){ return String(input||"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/(^-|-$)/g,""); }
-
-/* ============================ Confidence ============================ */
+/////////////////////// CONFIDENCE ///////////////////////
 function assessConfidence(reply, ai){
   const t = (reply||"").trim();
   if (!t) return {level:"low", reasons:["empty"]};
   const lower = t.toLowerCase();
-  const uncertain = /(i\s+(am|'m)\s+(not\s+)?sure|i\s+(do\s+not|don't)\s+know|unable to|cannot|can't|no\s+estoy\s+segur[ao]|no\s+sé|no\s+puedo\s+responder)/i.test(lower);
-  const refusal   = /(i\s*am\s*sorry|i'm\s*sorry|cannot\s+comply|unable\s+to\s+assist|lo\s+siento|no\s+puedo\s+cumplir|no\s+puedo\s+ayudarte)/i.test(lower);
+  const uncertain = /(i\s+(am|'m)\s+(not\s+)?sure|i\s+(do\s+not|don't)\s+know|unable to|cannot|can't|no\s+estoy\s+segur[ao]|no\s+sé|no\s+puedo)/i.test(lower);
+  const refusal   = /(i\s*am\s*sorry|i'm\s*sorry|cannot\s+comply|unable\s+to\s+assist|lo\s+siento|no\s+puedo\s+cumplir)/i.test(lower);
   const informative = /(business operations|operaciones de negocio|contact center|centro de contacto|it support|soporte ti|professionals|profesionales)/i.test(lower);
   const len = t.length;
   const tokens = Number(ai?.usage?.total_tokens ?? ai?.usage?.totalTokens ?? 0);
+
+  // Default as low confidence unless replies are significantly detailed and on-topic.
   if (uncertain || refusal) return {level:"low", reasons:["uncertain_tone"]};
-  if (informative && len>=160) return {level:"high", reasons:["rich_service_context"]};
-  if (len<80 && tokens<150) return {level:"low", reasons:["brief"]};
-  if (informative || len>=120) return {level:"high", reasons:["detailed"]};
+  if (len < 180 || tokens < 300) return {level:"low", reasons:["brief"]};
+  if (informative && len >= 240) return {level:"high", reasons:["rich_service_context"]};
   return {level:"medium", reasons:["default"]};
 }
 
-/* ============================== Security ============================== */
+/////////////////////// SECURITY (CORS/Integrity) ///////////////////////
 function applySecurityHeaders(resp, req, env){
   const h = new Headers(resp.headers);
 
@@ -772,7 +627,7 @@ function applySecurityHeaders(resp, req, env){
 
   h.set("Access-Control-Allow-Methods","POST, OPTIONS");
   h.set("Access-Control-Allow-Headers",
-    "Content-Type, X-Integrity, X-Integrity-Gateway, X-Integrity-Protocols, X-Request-Signature, X-Request-Timestamp, X-Request-Nonce, X-OPS-Signature, X-OPS-Timestamp, X-OPS-Nonce, CF-Turnstile-Response, X-Turnstile-Token"
+    "Content-Type, X-Integrity, X-Integrity-Gateway, X-Integrity-Protocols, X-Request-Signature, X-Request-Timestamp, X-Request-Nonce, X-OPS-Signature, X-OPS-Timestamp, X-OPS-Nonce, CF-Turnstile-Response, X-Turnstile-Token, X-OPS-Channella, X-Integrity-Key, X-Channella-Pub"
   );
   h.set("Access-Control-Max-Age","600");
 
@@ -785,113 +640,52 @@ function applySecurityHeaders(resp, req, env){
 
   const gw = resolveIntegrityGateway(env);
   const protos = resolveIntegrityProtocols(env);
-  const channella = resolveChannellaCanonical(env);
   const integrityValue = resolveIntegrityValue(env);
-  h.set("Cross-Origin-Resource-Policy","same-origin");
-  h.set("Cross-Origin-Opener-Policy","same-origin");
-  h.set("X-OPS-CYSEC-CORE","active");
-  h.set("X-Compliance-Frameworks", protos);
-  h.set("Integrity", integrityValue);
-  h.set("X-Integrity-Gateway", gw);
-  h.set("X-Integrity-Protocols", protos);
-  h.set("X-Integrity", integrityValue);
-  h.set("X-Integrity-Key", channella);
-  h.set(CHANNELLA_HEADER, channella);
+
+  // Derive CHANNELLA canonical each response (mirrors what we expect on requests)
+  Promise.resolve(resolveChannellaCanonical(env)).then(canon => {
+    h.set("X-Integrity", integrityValue);
+    h.set("Integrity", integrityValue);
+    h.set("X-Integrity-Gateway", gw);
+    h.set("X-Integrity-Protocols", protos);
+    h.set("X-OPS-CYSEC-CORE","active");
+    h.set("X-Compliance-Frameworks", protos);
+    h.set("X-Integrity-Key", canon);
+    h.set(CHANNELLA_HEADER, canon);
+  }).catch(()=>{});
+
   const sessionNonce = (req.headers.get("x-session-nonce")||"").trim();
   if (sessionNonce) h.set("X-Session-Nonce", sessionNonce);
 
   return new Response(resp.body, { status: resp.status, statusText: resp.statusText, headers: h });
 }
 
-function resolveIntegrityGateway(env){ const c = (env.INTEGRITY_GATEWAY||"").trim(); return c || DEFAULT_INTEGRITY_GATEWAY; }
-function resolveIntegrityProtocols(env){ const c = (env.INTEGRITY_PROTOCOLS||"").trim(); return c || DEFAULT_INTEGRITY_PROTOCOLS; }
-function resolveIntegrityValue(env){ const c = (env.INTEGRITY_VALUE||env.INTEGRITY_TOKEN||"").trim(); return c || DEFAULT_INTEGRITY_VALUE; }
-function resolveChannellaCanonical(env){
-  const configured = (env.CHANNELLA_CANONICAL || env.CHANNELLA_KEY || env.CHANNELLA || "").trim();
-  if (configured) return configured;
-  const derived = resolveIntegrityGateway(env).replace(/^https?:\/\//i, "").replace(/[^a-z0-9]+/gi, "-").replace(/(^-|-$)/g, "");
-  return derived ? `ops-channella:${derived}` : DEFAULT_CHANNELLA_KEY;
-}
+function resolveIntegrityGateway(env){ const c=(env.INTEGRITY_GATEWAY||"").trim(); return c || DEFAULT_INTEGRITY_GATEWAY; }
+function resolveIntegrityProtocols(env){ const c=(env.INTEGRITY_PROTOCOLS||"").trim(); return c || DEFAULT_INTEGRITY_PROTOCOLS; }
+function resolveIntegrityValue(env){ const c=(env.INTEGRITY_VALUE||env.INTEGRITY_TOKEN||"").trim(); return c || DEFAULT_INTEGRITY_VALUE; }
 function resolveHighConfidenceUrl(env){
   const c = (env.HIGH_CONFIDENCE_URL || env.HIGH_CONFIDENCE_GATEWAY || env.HIGH_CONFIDENCE_ENDPOINT || "").trim();
   return c || DEFAULT_HIGH_CONFIDENCE_URL;
 }
 
-function normalizeUrlish(v){ return (v||"").trim().replace(/\/+$/g, "").toLowerCase(); }
-function normalizeProtocols(v){
-  if (!v) return "";
-  return v.split(",").map(s=>s.trim().toLowerCase()).filter(Boolean).join(",");
-}
-
-function enforceIntegrityHeadersOnly(request, env){
-  const headers = request.headers;
-  const fail = (error) => json({ error }, 403, { "cache-control":"no-store" });
-
-  const integrity = (headers.get("x-integrity") || "").trim();
-  if (!integrity) return fail("missing_integrity_header");
-  if (integrity !== resolveIntegrityValue(env)) return fail("invalid_integrity_value");
-
-  const gwHeader = (headers.get("x-integrity-gateway") || "").trim();
-  if (!gwHeader) return fail("missing_integrity_gateway");
-  if (normalizeUrlish(gwHeader) !== normalizeUrlish(resolveIntegrityGateway(env))) return fail("invalid_integrity_gateway");
-
-  const protoHeader = (headers.get("x-integrity-protocols") || "").trim();
-  if (!protoHeader) return fail("missing_integrity_protocols");
-  if (normalizeProtocols(protoHeader) !== normalizeProtocols(resolveIntegrityProtocols(env))) return fail("invalid_integrity_protocols");
-
-  const channellaHeader = (headers.get("x-integrity-key") || headers.get(CHANNELLA_HEADER) || "").trim();
-  if (!channellaHeader) return fail("missing_channella");
-  if (channellaHeader !== resolveChannellaCanonical(env)) return fail("invalid_channella");
-
-  const sessionNonce = (headers.get("x-session-nonce") || "").trim().toLowerCase();
-  if (!SESSION_NONCE_PATTERN.test(sessionNonce)) return fail("invalid_session_nonce");
-
-  return null;
-}
-
-async function enforceIntegrity(request, env, expectedPath){
-  const headerGate = enforceIntegrityHeadersOnly(request, env);
-  if (headerGate) return headerGate;
-  if (!env.SHARED_KEY) return json({ error:"integrity_service_unavailable" }, 503, {"cache-control":"no-store"});
-
-  const signature = (request.headers.get("x-request-signature") || "").trim();
-  const tsHeader = request.headers.get("x-request-timestamp");
-  const nonce = (request.headers.get("x-request-nonce") || "").trim().toLowerCase();
-  if (!signature) return json({ error:"missing_signature" }, 403, {"cache-control":"no-store"});
-  if (!tsHeader) return json({ error:"missing_signature_timestamp" }, 403, {"cache-control":"no-store"});
-  if (!nonce || !SESSION_NONCE_PATTERN.test(nonce)) return json({ error:"invalid_signature_nonce" }, 403, {"cache-control":"no-store"});
-
-  const ts = Number(tsHeader);
-  const now = Math.floor(Date.now()/1000);
-  const ttl = getSignatureTtl(env);
-  if (!Number.isFinite(ts)) return json({ error:"invalid_signature_timestamp" }, 403, {"cache-control":"no-store"});
-  if (ts > now + 5 || now - ts > ttl) return json({ error:"signature_expired" }, 403, {"cache-control":"no-store","x-sig-ttl":String(ttl)});
-
-  const url = new URL(request.url);
-  const method = request.method.toUpperCase();
-  const path = url.pathname;
-  if (expectedPath && path !== expectedPath) return json({ error:"signature_path_mismatch" }, 403, {"cache-control":"no-store"});
-
-  const bodySha = await sha256HexOfRequest(request.clone());
-  const canonical = `${ts}.${nonce}.${method}.${path}.${bodySha}`;
-  const expectedSig = await hmacSha512B64(env.SHARED_KEY, canonical);
-  if (!timingSafeEqual(signature, expectedSig)) return json({ error:"invalid_signature" }, 403, {"cache-control":"no-store"});
-
-  if (env.OPS_NONCE_KV){
-    const cacheKey = `use:${nonce}:${ts}`;
-    const seen = await env.OPS_NONCE_KV.get(cacheKey);
-    if (seen) return json({ error:"signature_replay" }, 409, {"cache-control":"no-store"});
-    await env.OPS_NONCE_KV.put(cacheKey, "1", { expirationTtl: ttl });
+async function resolveChannellaCanonical(env){
+  if (!env.CHANNELLA) {
+    // Secret missing → do not block requests here; we’ll still compute a canonical for clients.
   }
-
-  return null;
-}
-
-function timingSafeEqual(a,b){
-  if (!a || !b || a.length !== b.length) return false;
-  let mismatch = 0;
-  for (let i=0; i<a.length; i++) mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return mismatch === 0;
+  const pubRaw = (env.CHANNELLA_EXPECTED_PUB || "").trim();
+  if (pubRaw) {
+    try {
+      const jwk = JSON.parse(pubRaw);
+      const kid = await rfc7638ThumbprintB64url(jwk);
+      return `ops-channella:${kid}`;
+    } catch {
+      // malformed JWK → fall through to fallback
+    }
+  }
+  const configured = (env.CHANNELLA_CANONICAL || env.CHANNELLA_KEY || env.CHANNELLA || "").trim();
+  if (configured) return configured;
+  const derived = resolveIntegrityGateway(env).replace(/^https?:\/\//i, "").replace(/[^a-z0-9]+/gi,"-").replace(/(^-|-$)/g,"");
+  return derived ? `ops-channella:${derived}` : DEFAULT_CHANNELLA_KEY;
 }
 
 function getAllowedOrigin(origin, env){
@@ -921,36 +715,91 @@ function isWorkersDev(o){ try { return new URL(o).hostname.endsWith(".workers.de
 function isDash(o){       try { return new URL(o).hostname.endsWith(".dash.cloudflare.com"); } catch { return false; } }
 function mergeVary(ex,v){ if(!ex) return v; const S=new Set(ex.split(",").map(s=>s.trim()).filter(Boolean)); S.add(v); return Array.from(S).join(", "); }
 
-/* =============================== Crypto =============================== */
-async function sha256HexOfRequest(req){
-  const buf = await req.arrayBuffer();
-  const hash = await crypto.subtle.digest("SHA-256", buf);
-  return [...new Uint8Array(hash)].map(b=>b.toString(16).padStart(2,"0")).join("");
+function enforceIntegrityHeadersOnly(request, env){
+  const headers = request.headers;
+  const fail = (error, code=403) => json({ error }, code, { "cache-control":"no-store" });
+
+  // 1) basic trio
+  const integrity = (headers.get("x-integrity") || "").trim();
+  if (!integrity) return fail("missing_integrity_header");
+  if (integrity !== resolveIntegrityValue(env)) return fail("invalid_integrity_value");
+
+  const gwHeader = (headers.get("x-integrity-gateway") || "").trim();
+  if (!gwHeader) return fail("missing_integrity_gateway");
+  if (normalizeUrlish(gwHeader) !== normalizeUrlish(resolveIntegrityGateway(env))) return fail("invalid_integrity_gateway");
+
+  const protoHeader = (headers.get("x-integrity-protocols") || "").trim();
+  if (!protoHeader) return fail("missing_integrity_protocols");
+  if (normalizeProtocols(protoHeader) !== normalizeProtocols(resolveIntegrityProtocols(env))) return fail("invalid_integrity_protocols");
+
+  // 2) CHANNELLA header presence (deep check happens in enforceIntegrity)
+  const chHeader = (headers.get("x-integrity-key") || headers.get(CHANNELLA_HEADER) || "").trim();
+  if (!chHeader) return fail("missing_channella");
+
+  return null;
 }
-async function sha512B64(input){
-  const enc = new TextEncoder().encode(input);
-  const hash = await crypto.subtle.digest("SHA-512", enc);
-  return b64(hash);
+function normalizeUrlish(v){
+  return (v||"").trim().replace(/\/+$/,"" ).toLowerCase();
 }
-async function hmacSha512B64(secret, message){
-  if (!secret) throw new Error("missing_shared_key");
-  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), {name:"HMAC", hash:"SHA-512"}, false, ["sign"]);
-  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(message));
-  return b64(sig);
-}
-function b64(buf){
-  const u8 = buf instanceof ArrayBuffer ? new Uint8Array(buf) : new Uint8Array(buf.buffer||buf);
-  let bin=""; for (let i=0;i<u8.length;i++) bin+=String.fromCharCode(u8[i]);
-  return btoa(bin);
+function normalizeProtocols(v){ return (v||"").split(",").map(s=>s.trim().toLowerCase()).filter(Boolean).join(","); }
+
+async function enforceIntegrity(request, env, expectedPath){
+  const headErr = enforceIntegrityHeadersOnly(request, env);
+  if (headErr) return headErr;
+
+  // Deep CHANNELLA check (compare header vs computed canonical)
+  const sentKey = (request.headers.get("x-integrity-key") || request.headers.get(CHANNELLA_HEADER) || "").trim();
+  const canonical = await resolveChannellaCanonical(env);
+  if (sentKey !== canonical) return json({ error:"invalid_channella" },403,{"cache-control":"no-store"});
+
+  if (!env.CHANNELLA) {
+    return json({ error:"channella_secret_missing" },503,{"cache-control":"no-store"});
+  }
+
+  if (!env.SHARED_KEY) return json({ error:"integrity_service_unavailable" },503,{"cache-control":"no-store"});
+
+  const signature = (request.headers.get("x-request-signature") || "").trim();
+  const tsHeader = request.headers.get("x-request-timestamp");
+  const nonce = (request.headers.get("x-request-nonce") || "").trim().toLowerCase();
+  if (!signature) return json({ error:"missing_signature" },403,{"cache-control":"no-store"});
+  if (!tsHeader)  return json({ error:"missing_signature_timestamp" },403,{"cache-control":"no-store"});
+  if (!nonce || !SESSION_NONCE_PATTERN.test(nonce)) return json({ error:"invalid_signature_nonce" },403,{"cache-control":"no-store"});
+
+  const ts = Number(tsHeader);
+  const now = Math.floor(Date.now()/1000);
+  const ttl = getSignatureTtl(env);
+  if (!Number.isFinite(ts)) return json({ error:"invalid_signature_timestamp" },403,{"cache-control":"no-store"});
+  if (ts > now + 5 || now - ts > ttl) return json({ error:"signature_expired" },403,{"cache-control":"no-store","x-sig-ttl":String(ttl)});
+
+  const url = new URL(request.url);
+  const method = request.method.toUpperCase();
+  const path = url.pathname;
+  if (expectedPath && path !== expectedPath) return json({ error:"signature_path_mismatch" },403,{"cache-control":"no-store"});
+
+  const bodySha = await sha256HexOfRequest(request.clone());
+  const canonicalSig = `${ts}.${nonce}.${method}.${path}.${bodySha}`;
+
+  // SHARED_KEY is base64; hmacSha512B64 will decode it and return base64 signature
+  const expectedSig = await hmacSha512B64(env.SHARED_KEY, canonicalSig);
+  if (!timingSafeEqual(signature, expectedSig)) return json({ error:"invalid_signature" },403,{"cache-control":"no-store"});
+
+  if (env.OPS_NONCE_KV) {
+    const cacheKey = `use:${nonce}:${ts}`;
+    const seen = await env.OPS_NONCE_KV.get(cacheKey);
+    if (seen) return json({ error:"signature_replay" },409,{"cache-control":"no-store"});
+    await env.OPS_NONCE_KV.put(cacheKey, "1", { expirationTtl: ttl });
+  }
+  return null;
 }
 
-/* ================================ JSON ================================ */
-function json(obj,status=200,extra){
-  const h = {"content-type":"application/json; charset=UTF-8", ...(extra||{})};
-  return new Response(JSON.stringify(obj), {status, headers:h});
+function timingSafeEqual(a,b){
+  if (!a || !b || a.length !== b.length) return false;
+  let mismatch = 0;
+  for (let i=0;i<a.length;i++) mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return mismatch === 0;
 }
 
-/* ========================== Honeypot / KV =========================== */
+/////////////////////// HONEYPOT ///////////////////////
 async function checkHoneypotBan(request, env){
   const kv = env.OPS_BANLIST_KV || env.OPS_NONCE_KV;
   if (!kv) return null;
@@ -1055,7 +904,7 @@ function getClientIp(req){
          (h.get("x-real-ip")||"").trim() || null;
 }
 
-/* ============================ Turnstile ============================ */
+/////////////////////// TURNSTILE ///////////////////////
 function extractTurnstileToken(source){
   const keys = ["cf-turnstile-response","turnstile_response","turnstile-token","turnstile_token","turnstileResponse","turnstileToken","turnstile"];
   if (!source) return null;
@@ -1071,7 +920,7 @@ function extractTurnstileToken(source){
 }
 async function enforceTurnstile(token, request, env){
   const secret = (env?.TURNSTILE_SECRET||"").trim();
-  if (!secret) return null; // not required unless configured
+  if (!secret) return null; // disabled unless configured
   let resolved = typeof token==="string" ? token.trim() : "";
   if (!resolved){
     const h = request.headers.get("cf-turnstile-response") || request.headers.get("x-turnstile-token");
@@ -1086,9 +935,7 @@ async function enforceTurnstile(token, request, env){
 
   try {
     const verify = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
-      method:"POST",
-      body: params,
-      headers: {"content-type":"application/x-www-form-urlencoded"}
+      method:"POST", body: params, headers: {"content-type":"application/x-www-form-urlencoded"}
     });
     if (!verify.ok) return json({error:"turnstile_unreachable"},502,{"cache-control":"no-store","x-turnstile":String(verify.status)});
     const result = await verify.json();
@@ -1102,7 +949,7 @@ async function enforceTurnstile(token, request, env){
   }
 }
 
-/* ============================ Models / Limits ============================ */
+/////////////////////// MODELS / LIMITS ///////////////////////
 function selectChatModel(env, metadata){
   const tier = typeof metadata?.tier === "string" ? metadata.tier.toLowerCase() : "";
   if (tier==="big"     && env.AI_LLM_BIG)     return env.AI_LLM_BIG;
@@ -1110,57 +957,7 @@ function selectChatModel(env, metadata){
   return env.AI_LLM_DEFAULT || MODEL_ID;
 }
 function selectSttModel(env, prefer){
-  const fallback =
-    env.AI_STT_TURBO ||
-    env.AI_STT_BASE  ||
-    env.AI_STT_TINY  ||
-    env.AI_STT_VENDOR||
-    "@cf/openai/whisper";
-
-  switch (prefer) {
-    case "tiny":   return env.AI_STT_TINY   || fallback;
-    case "base":   return env.AI_STT_BASE   || fallback;
-    case "turbo":  return env.AI_STT_TURBO  || fallback;
-    case "vendor": return env.AI_STT_VENDOR || fallback;
-    default:       return fallback;
-  }
-
-  const gatewayHeader = (request.headers.get("x-integrity-gateway")||"").trim();
-  const expectedGateway = resolveIntegrityGateway(env);
-  if (gatewayHeader && gatewayHeader !== expectedGateway) {
-    return json({error:"invalid_integrity_gateway"},403,{"cache-control":"no-store"});
-  }
-
-  const channellaHeader = (request.headers.get("x-integrity-key") || request.headers.get(CHANNELLA_HEADER) || "").trim();
-  const canonicalChannella = resolveChannellaCanonical(env);
-  if (!channellaHeader) {
-    return json({error:"missing_channella"},403,{"cache-control":"no-store"});
-  }
-  if (channellaHeader !== canonicalChannella) {
-    return json({error:"invalid_channella"},403,{"cache-control":"no-store"});
-  }
-  const sessionNonce = (request.headers.get("x-session-nonce")||"").trim().toLowerCase();
-  if (!/^[a-f0-9]{32}$/.test(sessionNonce)) {
-    return json({error:"invalid_session_nonce"},403,{"cache-control":"no-store"});
-  }
-  return null;
-}
-
-/* ============================ Models / Limits ============================ */
-function selectChatModel(env, metadata){
-  const tier = typeof metadata?.tier === "string" ? metadata.tier.toLowerCase() : "";
-  if (tier==="big"     && env.AI_LLM_BIG)     return env.AI_LLM_BIG;
-  if (tier==="premium" && env.AI_LLM_PREMIUM) return env.AI_LLM_PREMIUM;
-  return env.AI_LLM_DEFAULT || MODEL_ID;
-}
-function selectSttModel(env, prefer){
-  const fallback =
-    env.AI_STT_TURBO ||
-    env.AI_STT_BASE  ||
-    env.AI_STT_TINY  ||
-    env.AI_STT_VENDOR||
-    "@cf/openai/whisper";
-
+  const fallback = env.AI_STT_TURBO || env.AI_STT_BASE || env.AI_STT_TINY || env.AI_STT_VENDOR || "@cf/openai/whisper";
   switch (prefer) {
     case "tiny":   return env.AI_STT_TINY   || fallback;
     case "base":   return env.AI_STT_BASE   || fallback;
@@ -1177,11 +974,11 @@ function getSignatureTtl(env){
 }
 function getMaxTokens(env){
   const v = env.LLM_MAX_TOKENS ? Number(env.LLM_MAX_TOKENS) : NaN;
-  if (!Number.isFinite(v) || v <= 0) return 768;
+  if (!Number.isFinite(v) || v <= 0) return 500;
   return Math.min(1024, v);
 }
-
-/* ============================== Transcript ============================== */
+function clampInt(v, def){ const n=Number(v); return Number.isFinite(n)?n:def; }
+function sanitizeLocale(s){ if(!s) return "en"; const t=String(s).trim().toLowerCase(); return /^[a-z]{2}(-[a-z]{2})?$/.test(t)?t:"en"; }
 function extractTranscript(res){
   if (!res) return "";
   if (typeof res === "string") return res;
@@ -1190,24 +987,68 @@ function extractTranscript(res){
   if (typeof res.output_text === "string") return res.output_text;
   return "";
 }
-function getSignatureTtl(env){
-  const fallback = 300;
-  const v = env.SIG_TTL_SECONDS ? Number(env.SIG_TTL_SECONDS) : NaN;
-  if (!Number.isFinite(v) || v <= 0) return fallback;
-  return Math.max(60, Math.min(900, Math.floor(v)));
-}
-function getMaxTokens(env){
-  const v = env.LLM_MAX_TOKENS ? Number(env.LLM_MAX_TOKENS) : NaN;
-  if (!Number.isFinite(v) || v <= 0) return 768;
-  return Math.min(1024, v);
+
+/////////////////////// CRYPTO ///////////////////////
+function base64ToBytes(b64) {
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
 }
 
-/* ============================== Transcript ============================== */
-function extractTranscript(res){
-  if (!res) return "";
-  if (typeof res === "string") return res;
-  if (typeof res.text === "string") return res.text;
-  if (Array.isArray(res.results) && res.results[0]?.text) return res.results[0].text;
-  if (typeof res.output_text === "string") return res.output_text;
-  return "";
+async function sha256HexOfRequest(req){
+  const buf = await req.arrayBuffer();
+  const hash = await crypto.subtle.digest("SHA-256", buf);
+  return [...new Uint8Array(hash)].map(b=>b.toString(16).padStart(2,"0")).join("");
 }
+
+async function sha512B64(input){
+  const enc = new TextEncoder().encode(input);
+  const hash = await crypto.subtle.digest("SHA-512", enc);
+  return b64(hash);
+}
+
+// HMAC-SHA512 using SHARED_KEY as *base64* secret; returns base64 signature
+async function hmacSha512B64(secretBase64, message){
+  if (!secretBase64) throw new Error("missing_shared_key");
+  const keyBytes = base64ToBytes(secretBase64);
+  const key = await crypto.subtle.importKey(
+    "raw",
+    keyBytes,
+    {name:"HMAC", hash:"SHA-512"},
+    false,
+    ["sign"]
+  );
+  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(message));
+  return b64(sig);
+}
+
+// Detached hex helper if you want X-Signature-HMAC-SHA512-style headers
+async function signBodyWithHmac(env, bodyText) {
+  // env.SHARED_KEY must be the base64 string stored as a secret.
+  const sigB64 = await hmacSha512B64(env.SHARED_KEY, bodyText);
+  const sigBytes = base64ToBytes(sigB64);
+  const hex = [...sigBytes].map(b => b.toString(16).padStart(2, "0")).join("").toUpperCase();
+  return hex;
+}
+
+function b64(buf){
+  const u8 = buf instanceof ArrayBuffer ? new Uint8Array(buf) : new Uint8Array(buf.buffer||buf);
+  let bin=""; for (let i=0;i<u8.length;i++) bin+=String.fromCharCode(u8[i]);
+  return btoa(bin);
+}
+
+// RFC 7638 JWK thumbprint (for EC P-256 public JWK)
+async function rfc7638ThumbprintB64url(jwk){
+  const obj = { crv: jwk.crv, kty: jwk.kty, x: jwk.x, y: jwk.y };
+  const json = JSON.stringify(obj);
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(json));
+  return base64url(new Uint8Array(digest));
+}
+function base64url(u8){
+  let s=""; for (let i=0;i<u8.length;i++) s += String.fromCharCode(u8[i]);
+  return btoa(s).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
+}
+
+/////////////////////// JSON ///////////////////////
+function json(obj,status=200,extra){ const h={"content-type":"application/json; charset=UTF-8",...(extra||{})}; return new Response(JSON.stringify(obj),{status,headers:h}); }
