@@ -5,51 +5,69 @@ main = "src/worker.js"
 compatibility_date = "2025-11-01"
 workers_dev = true
 
-# Workers AI (env.AI)
+# Workers AI binding
 [ai]
 binding = "AI"
 
 # ---------- KV NAMESPACES ----------
 
-# Required: HMAC nonce replay defense (+ fallback honeypot store)
+# Required: replay defense for detached signatures + honeypot reuse
 [[kv_namespaces]]
 binding = "OPS_NONCE_KV"        # mint/use replay defense
 id = "01d6a01e13b74f939c0cd3e8b4e7f59b"
 
-# Separate honeypot banlist KV
+# Optional: separate honeypot banlist KV (IP blocks)
 [[kv_namespaces]]
 binding = "OPS_BANLIST_KV"      # honeypot IP blocks
 id = "bf0f692b2ad540938126f26ae77aa851"
 
-# Lightweight transcripts / scan reports
+# Optional: transcripts / scan reports
 [[kv_namespaces]]
-binding = "OPS_TRANSCRIPTS_KV"
+binding = "OPS_TRANSCRIPTS_KV"  # lightweight transcripts / scan reports
 id = "ecd39e37d71b43b8bc26340ad9a27697"
 
 # ---------- R2 (WebLLM models) ----------
 
-# R2 bucket that will hold WebLLM models or related blobs.
-# In the Worker code this is available as env.R2_WEBLLM_MODELS
+# Keep your WebLLM bucket, no OPS_ARTIFACTS_R2
 [[r2_buckets]]
-binding = "R2_WEBLLM_MODELS"
+binding     = "R2_WEBLLM_MODELS"
 bucket_name = "r2-webllm-models"
 
 # ---------- D1 (training DB) ----------
 
 [[d1_databases]]
-binding = "OPS_TRAINING_DB"
+binding       = "OPS_TRAINING_DB"
 database_name = "ops_training_db"
-database_id = "f959249d-fa40-48d9-a832-ff375b56e529"
+database_id   = "f959249d-fa40-48d9-a832-ff375b56e529"
 
 # ---------- NON-SENSITIVE VARS (in repo) ----------
-[vars]
-INTEGRITY_REQUIRED   = "true"
-INTEGRITY_GATEWAY    = "https://withered-mouse-9aee.grabem-holdem-nuts-right.workers.dev"
-INTEGRITY_PROTOCOLS  = "CORS,CSP,OPS-CySec-Core,CISA,NIST,PCI-DSS,SHA-384,SHA-512"
-SIG_TTL_SECONDS      = "300"
-LLM_MAX_TOKENS       = "500"
-ALLOW_WORKERS_DEV    = "true"
-ALLOW_DASH           = "false"
 
-# JWK used to derive the canonical channella key
+[vars]
+# Require integrity headers + detached signatures
+INTEGRITY_REQUIRED  = "true"
+
+# Chattia GitHub Pages UI → also used as default X-Integrity value
+INTEGRITY_VALUE     = "https://chattiavato-a11y.github.io"
+
+# Integrity gateway = this Worker
+INTEGRITY_GATEWAY   = "https://withered-mouse-9aee.grabem-holdem-nuts-right.workers.dev"
+
+# Protocol “profile” advertised in headers
+INTEGRITY_PROTOCOLS = "CORS,CSP,OPS-CySec-Core,CISA,NIST,PCI-DSS,SHA-384,SHA-512"
+
+# TTL for detached signatures (seconds)
+SIG_TTL_SECONDS     = "300"
+
+# Max tokens for chat model
+LLM_MAX_TOKENS      = "500"
+
+# Allow requests from *.workers.dev (for testing) and block dash by default
+ALLOW_WORKERS_DEV   = "true"
+ALLOW_DASH          = "false"
+
+# JWK used to derive the canonical Channella key (already in your snippet)
 CHANNELLA_EXPECTED_PUB = "{ \"crv\": \"P-256\", \"ext\": true, \"key_ops\": [], \"kty\": \"EC\", \"x\": \"LwrIIZR3AcENpAtpQRQ5DtGo5ML7diFfILRgg5DUCdI\", \"y\": \"ALclNxh3f9sSIZ1xBtsCA8f49Te2XFlCg0pysX1x8P0\" }"
+
+# Note:
+# - DO NOT put secrets here.
+# - Keep SHARED_KEY, CHANNELLA, TURNSTILE_SECRET, ESCALATION_WEBHOOK as *secrets* in the dashboard.
