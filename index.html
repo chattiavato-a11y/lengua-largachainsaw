@@ -193,6 +193,7 @@ const INTEGRITY_GATEWAY = CF_WORKER_URL.replace(/\/$/, '');
 const INTEGRITY_PROTOCOLS = 'CORS,CSP,OPS-CySec-Core,CISA,NIST,PCI-DSS,SHA-384,SHA-512';
 const CHANNELLA_HEADER = 'X-OPS-Channella';
 const CHANNELLA_CANONICAL = 'ops-channella-v1';
+const TURNSTILE_SITE_KEY = '0x4AAAAAACCIIeDU8SsWR8H0';
 
 function randomHex(bytes = 16){
   try {
@@ -244,6 +245,7 @@ const input  = document.querySelector('#chatbot-input');
 const send   = document.querySelector('#chatbot-send');
 const honeyp = document.querySelector('#chatbot-company');
 const tTok   = document.querySelector('#turnstile-token');
+const turnstileSlot = document.getElementById('turnstile-slot');
 const themeFab = document.getElementById('themeFab');
 const themeFabLabel = document.getElementById('themeFabLabel');
 const supportCtrl = document.getElementById('resetCtrl');
@@ -257,6 +259,10 @@ const storage = (()=>{ try{return window.localStorage;}catch{return null;} })();
 const securityState = { lastSweep:null };
 const speechState = { recognition:null, listening:false, speakEnabled:false, supported:false, langCode:'en-US', allowTts:false, warnedUnsupported:false };
 const { create } = window.zustand || {};
+
+if (turnstileSlot && TURNSTILE_SITE_KEY) {
+  turnstileSlot.dataset.sitekey = TURNSTILE_SITE_KEY;
+}
 const defaultThemes = Object.freeze({
   dark:{ tokens:{
     'clr-primary':'#00c4ff','clr-accent':'#ff3bdb',
